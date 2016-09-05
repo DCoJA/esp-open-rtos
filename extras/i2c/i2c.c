@@ -33,7 +33,7 @@
 // With calling overhead, we end up at ~100kbit/s
 #define CLK_HALF_PERIOD_US (1)
 
-#define CLK_STRETCH  (10)
+#define CLK_STRETCH  (10000)
 
 static bool started;
 static uint8_t g_scl_pin;
