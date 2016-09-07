@@ -154,13 +154,15 @@ void i2s_init(void)
     I2S.CONF &= ~(I2S_CONF_RX_SLAVE_MOD
                   | I2S_CONF_TX_SLAVE_MOD
                   | (I2S_CONF_BITS_MOD_M << I2S_CONF_BITS_MOD_S)
-                  | (I2S_CONF_BCK_DIV_M < I2S_CONF_BCK_DIV_S)
-                  | (I2S_CONF_CLKM_DIV_M < I2S_CONF_CLKM_DIV_S));
+                  | (I2S_CONF_BCK_DIV_M << I2S_CONF_BCK_DIV_S)
+                  | (I2S_CONF_CLKM_DIV_M << I2S_CONF_CLKM_DIV_S));
+    // WS=160MHz/(BCK_DIV*CLM_DIV*24*2)
+    // use BCK_DIV=4 and CLKM_DIV=52 for WS=16025Hz
     I2S.CONF |= (I2S_CONF_MSB_RIGHT
                   | I2S_CONF_RX_MSB_SHIFT
                   | (8 << I2S_CONF_BITS_MOD_S)
-                  | (4 < I2S_CONF_BCK_DIV_S)
-                  | (15 < I2S_CONF_CLKM_DIV_S));
+                  | (4 << I2S_CONF_BCK_DIV_S)
+                  | (52 << I2S_CONF_CLKM_DIV_S));
     
     I2S.INT_CLEAR |= (I2S_INT_CLEAR_TX_REMPTY
                        | I2S_INT_CLEAR_TX_WFULL
