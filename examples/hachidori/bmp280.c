@@ -32,6 +32,13 @@
 #define BMP280_REG_RAW		0xf7
 #define BMP280_RAW_SIZE		(0xfd-0xf7)
 
+#define BME280_REG_CALIB1	0xa1
+#define BME280_REG_CALIB2	0xe1
+#define BME280_CALIB2_SIZE	(0xe8-0xe1)
+#define BME280_REG_HUM		0xfd
+#define BME280_HUM_SIZE		(0xff-0xfd)
+#define BME280_REG_CTRLHUM	0xf2
+
 // oversampling 3 gives 14ms conversion time
 #define OVERSAMPLING 3
 
@@ -42,13 +49,19 @@
 extern xSemaphoreHandle i2c_sem;
 extern xSemaphoreHandle send_sem;
 
+static bool enable_hum = false;
+
 static uint8_t bmp280_calib_buff[BMP280_CALIB_SIZE];
+static uint8_t bme280_calib2_buff[BME280_CALIB2_SIZE];
 // Internal calibration registers
 static uint16_t dig_T1;
 static int16_t dig_T2, dig_T3;
 static uint16_t dig_P1;
 static int16_t dig_P2, dig_P3, dig_P4, dig_P5;
 static int16_t dig_P6, dig_P7, dig_P8, dig_P9;
+static uint8_t dig_H1, dig_H3;
+static int16_t dig_H2, dig_H4, dig_H5;
+static int8_t dig_H6;
 
 static uint8_t bmp280_read(uint8_t reg)
 {
@@ -84,11 +97,20 @@ static void bmp280_init(void)
         printf("BMP280 bad id value %02x\n", id);
     }
 
+    if (id == BME280_CHIP_ID) {
+        enable_hum = true;
+    }
+
     // reset and wait to start up
     bmp280_write(BMP280_REG_RESET, 0xb6);
     while (bmp280_read(BMP280_REG_STATUS) & 1)
         ;
 
+    if (enable_hum) {
+        // osrs_h = 1  This should be prior to setting REG_CTRL(ctrl_meas).
+        // See datasheet 5.4.3 and 5.4.4.
+        bmp280_write(BME280_REG_CTRLHUM, 1);
+    }
     // osrs_t = 1, osrs_p = OVERSAMPLING, mode = 3(cyclic)
     bmp280_write(BMP280_REG_CTRL, (1 << 5) | (OVERSAMPLING << 2) | 3);
     // t_sb = 0, filter = 5
@@ -109,13 +131,25 @@ static void bmp280_init(void)
     dig_P7 = int16_val(d, 9);
     dig_P8 = int16_val(d, 10);
     dig_P9 = int16_val(d, 11);
- 
+
+    if (enable_hum) {
+        bmp280_readn(BME280_REG_CALIB1, &dig_H1, sizeof(dig_H1));
+        bmp280_readn(BME280_REG_CALIB2, bme280_calib2_buff, BME280_CALIB2_SIZE);
+        uint8_t *d = bme280_calib2_buff;
+        dig_H2 = int16_val(d, 0);
+        dig_H3 = d[2];
+        dig_H4 = (int16_t)((d[4] & 0x0f) | d[3] << 4);
+        dig_H5 = (int16_t)(((d[4] >> 4) & 0x0f) | d[5] << 4);
+        dig_H6 = (int8_t)d[6];
+    }
+
     xSemaphoreGive(i2c_sem);
 }
 
 // Calculate Temperature and Pressure in real units.
 // See Datasheet page 22 for this formulas calculations.
-static void calculate(int32_t adc_P, int32_t adc_T, uint8_t *pp, uint8_t *tp)
+static void calculate(int32_t adc_P, int32_t adc_T, int32_t adc_H,
+                      uint8_t *pp, uint8_t *tp, uint8_t *hp)
 {
     int32_t t_fine;
     int32_t tv1, tv2;
@@ -155,20 +189,55 @@ static void calculate(int32_t adc_P, int32_t adc_T, uint8_t *pp, uint8_t *tp)
     press.f = ((uint32_t) p)/256.0;
     memcpy (pp, press.bytes, sizeof(press));
     // printf("%f %f\n", press.f, temp.f);
+
+    if (!enable_hum) {
+        return;
+    }
+
+    // Returns humidity in %RH as unsigned 32 bit integer in Q22.10
+    // format (22 integer and 10 fractional bits).
+    // Output value of 47445 represents 47445/1024 = 46.333 %RH
+    int32_t h, v_x1_u32r;
+    union { float f; uint8_t bytes[sizeof(float)]; } hum;
+
+    v_x1_u32r = (t_fine - ((int32_t)76800));
+    v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20)
+                    - (((int32_t)dig_H5) * v_x1_u32r))
+                   + ((int32_t)16384)) >> 15)
+                 * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10)
+                        * (((v_x1_u32r *((int32_t)dig_H3)) >> 11)
+                           + ((int32_t)32768))) >> 10)
+                      + ((int32_t)2097152)) * ((int32_t)dig_H2) + 8192) >> 14));
+    v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7)
+                               * ((int32_t)dig_H1)) >> 4));
+    v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
+    v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
+    h = (uint32_t)(v_x1_u32r>>12);
+    hum.f = h/1024.0;
+    memcpy (hp, hum.bytes, sizeof(hum));
+    // printf("%f\n", hum.f);
+
     return;
 }
 
 static bool bmp280_read_sample(uint8_t *buf)
 {
     xSemaphoreTake(i2c_sem, portMAX_DELAY);
-    bmp280_readn(BMP280_REG_RAW, buf, BMP280_RAW_SIZE);
+    bmp280_readn(BMP280_REG_RAW, buf,
+                 BMP280_RAW_SIZE + (enable_hum ? BME280_HUM_SIZE : 0));
     xSemaphoreGive(i2c_sem);
 
     // get ADC values
     int32_t adc_P = (int32_t)(buf[0] << 12 | buf[1] << 4 | buf[2] >> 4);
     int32_t adc_T = (int32_t)(buf[3] << 12 | buf[4] << 4 | buf[5] >> 4);
-    // calculate pressure and tempetature
-    calculate(adc_P, adc_T, &buf[0], &buf[4]);
+    int32_t adc_H = 0;
+    if (enable_hum) {
+        adc_H = (int32_t)(buf[6] << 8 | buf[7]);
+        // printf("adc_H: %d\n", adc_H);
+    }
+
+    // calculate pressure, tempetature and humidity
+    calculate(adc_P, adc_T, adc_H, &buf[0], &buf[4], &buf[8]);
 
     return true;
 }
