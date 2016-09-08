@@ -1,3 +1,3 @@
-PROGRAM=mpu9250
+PROGRAM=hachidori
 EXTRA_COMPONENTS = extras/i2c
 include ../../common.mk
