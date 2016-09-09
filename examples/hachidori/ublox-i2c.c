@@ -26,6 +26,7 @@
 
 extern xSemaphoreHandle i2c_sem;
 extern xSemaphoreHandle send_sem;
+extern xQueueHandle *write_queue;
 
 static uint16_t ublox_count;
 
@@ -155,7 +156,17 @@ void gps_task(void *pvParameters)
     portTickType xLastWakeTime = xTaskGetTickCount();
     while (1) {
         if (ublox_count == 0) {
-            vTaskDelayUntil(&xLastWakeTime, 100/portTICK_RATE_MS);
+            int i = 0;
+            uint8_t buf[32];
+            while (i <= 30 && xQueueReceive(write_queue, &buf[i], 0)) {
+                    i++;
+            }
+            if (i > 0) {
+                ublox_writen(buf, (size_t) i);
+                // buf[i] = 0; printf("%s", buf);
+            } else {
+                vTaskDelayUntil(&xLastWakeTime, 100/portTICK_RATE_MS);
+            }
         }
         // Read 30bytes.  See above.
         count = ublox_readn(&pkt.data[1], sizeof(pkt.data)-2);

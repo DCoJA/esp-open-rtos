@@ -9,6 +9,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 #include <semphr.h>
 
 #include "i2c/i2c.h"
@@ -82,6 +83,9 @@ static void udp_task(void *pvParameters)
 xSemaphoreHandle i2c_sem;
 xSemaphoreHandle send_sem;
 
+#define WRITE_QUEUE_SIZE 256
+xQueueHandle *write_queue;
+
 void user_init(void)
 {
     uart_set_baud(0, 115200);
@@ -106,6 +110,7 @@ void user_init(void)
 
     vSemaphoreCreateBinary(i2c_sem);
     vSemaphoreCreateBinary(send_sem);
+    write_queue = xQueueCreate(WRITE_QUEUE_SIZE, sizeof(uint8_t *));
 
     // start udp task
     xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 5, NULL);
@@ -115,7 +120,7 @@ void user_init(void)
     }
 
     // Create sensor and pwm tasks
-    xTaskCreate(imu_task, (int8_t *)"imu_task", 1024, (void*)sockfd, 4, NULL);
+    xTaskCreate(imu_task, (int8_t *)"imu_task", 512, (void*)sockfd, 4, NULL);
     xTaskCreate(pwm_task, (int8_t *)"pwm_task", 256, (void*)sockfd, 3, NULL);
     xTaskCreate(baro_task, (int8_t *)"baro_task", 512, (void*)sockfd, 2, NULL);
     xTaskCreate(gps_task, (int8_t *)"gps_task", 512, (void*)sockfd, 2, NULL);
