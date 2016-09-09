@@ -59,6 +59,7 @@
 #endif
 
 extern xSemaphoreHandle i2c_sem;
+extern xQueueHandle *write_queue;
 
 static void pca9685_write(uint8_t reg, uint8_t val)
 {
@@ -127,6 +128,19 @@ void pwm_task(void *pvParameters)
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n != sizeof(pkt) || pkt.head != LRHEADER)
             continue;
+
+        if (pkt.tos == TOS_GPSCMD) {
+            // Send each byte via queue.  Assume that GPSCMD packet is
+            // relatively rare.
+            int i = 0;
+            size_t len = pkt.data[0];
+            while (i < len && xQueueSend(write_queue, &pkt.data[1+i], 0)) {
+                i++;
+            }
+            continue;
+        } else if (pkt.tos != TOS_PWM) {
+            continue;
+        }
 
         for (int i = 0; i < NUM_CHANNELS; i++) {
             uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];

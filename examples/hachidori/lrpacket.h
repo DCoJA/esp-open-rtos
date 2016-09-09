@@ -15,3 +15,4 @@ struct LRpacket {
 #define TOS_GPS		12
 
 #define TOS_PWM		64
+#define TOS_GPSCMD	(64+12)
