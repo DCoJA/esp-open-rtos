@@ -22,8 +22,7 @@
 
 #include "ssid_config.h"
 
-#define ECHO_SERVER "10.253.253.40"
-#define PORT 5790
+#include "udp_config.h"
 
 extern void imu_task(void *pvParameters);
 extern void pwm_task(void *pvParameters);
@@ -52,12 +51,12 @@ static void udp_task(void *pvParameters)
     memset((char *) &caddr, 0, sizeof(caddr));
     caddr.sin_family = AF_INET;
     caddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    caddr.sin_port = htons(PORT);
+    caddr.sin_port = htons(UDP_PORT);
 
     memset((char *) &saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = inet_addr (ECHO_SERVER);
-    saddr.sin_port = htons(PORT);
+    saddr.sin_addr.s_addr = inet_addr (UDP_SERVER);
+    saddr.sin_port = htons(UDP_PORT);
 
     rtn = bind (s, (struct sockaddr *)&caddr, sizeof(caddr));
     if(rtn < 0) {
