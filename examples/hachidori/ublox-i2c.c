@@ -17,6 +17,8 @@
 
 #include "lrpacket.h"
 
+#include "ringbuf.h"
+
 // u-blox neo-7m i2c
 
 #define UBLOX_ADDRESS 0x42
@@ -26,7 +28,9 @@
 
 extern xSemaphoreHandle i2c_sem;
 extern xSemaphoreHandle send_sem;
-extern xQueueHandle *write_queue;
+extern xSemaphoreHandle ringbuf_sem;
+
+extern struct ringbuf ubloxbuf;
 
 static uint16_t ublox_count;
 
@@ -63,10 +67,12 @@ static bool i2c_slave_read_rc(uint8_t slave_addr, uint8_t data, uint8_t *buf, ui
 
 static int ublox_writen(uint8_t *buf, size_t size)
 {
+#if 0
     // Wait for read completed
     if (ublox_count) {
         return 0;
     }
+#endif
 
     // Should be 2 bytes, at least (protocol limitation of chips)
     if (size <= 1) {
@@ -139,6 +145,8 @@ static int ublox_readn(uint8_t *buf, size_t n)
     return n;
 }
 
+static uint8_t cmdbuf[32];
+
 void gps_task(void *pvParameters)
 {
     struct LRpacket pkt;
@@ -153,21 +161,32 @@ void gps_task(void *pvParameters)
     }
     xSemaphoreGive(i2c_sem);
 
-    portTickType xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        if (ublox_count == 0) {
-            int i = 0;
-            uint8_t buf[32];
-            while (i <= 30 && xQueueReceive(write_queue, &buf[i], 0)) {
-                    i++;
+        vTaskDelay(20/portTICK_RATE_MS);
+
+        if (1) {
+            uint32_t len = 0;
+            xSemaphoreTake(ringbuf_sem, portMAX_DELAY);
+            uint32_t size = ringbuf_size(&ubloxbuf);
+            if (size >= 2) {
+                if (size > 30) {
+                    len = 30;
+                } else {
+                    len = size;
+                }
+                for (int i = 0; i < len; i++) {
+                    cmdbuf[i] = ringbuf_get(&ubloxbuf);
+                }
             }
-            if (i > 0) {
-                ublox_writen(buf, (size_t) i);
-                // buf[i] = 0; printf("%s", buf);
-            } else {
-                vTaskDelayUntil(&xLastWakeTime, 100/portTICK_RATE_MS);
+            xSemaphoreGive(ringbuf_sem);
+            if (len > 0) {
+                if (ublox_writen(cmdbuf, len) != len) {
+                    printf("[ublox] failed to write %d bytes\n", len);
+                }
+                // printf("write GPSCMD %d bytes\n", len);
             }
         }
+
         // Read 30bytes.  See above.
         count = ublox_readn(&pkt.data[1], sizeof(pkt.data)-2);
         if (count == 0) {

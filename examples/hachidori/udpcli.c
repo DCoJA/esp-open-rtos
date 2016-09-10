@@ -9,7 +9,6 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
 #include <semphr.h>
 
 #include "i2c/i2c.h"
@@ -23,6 +22,8 @@
 #include "ssid_config.h"
 
 #include "udp_config.h"
+
+#include "ringbuf.h"
 
 extern void imu_task(void *pvParameters);
 extern void pwm_task(void *pvParameters);
@@ -81,9 +82,9 @@ static void udp_task(void *pvParameters)
 
 xSemaphoreHandle i2c_sem;
 xSemaphoreHandle send_sem;
+xSemaphoreHandle ringbuf_sem;
 
-#define WRITE_QUEUE_SIZE 256
-xQueueHandle *write_queue;
+struct ringbuf ubloxbuf;
 
 void user_init(void)
 {
@@ -109,7 +110,10 @@ void user_init(void)
 
     vSemaphoreCreateBinary(i2c_sem);
     vSemaphoreCreateBinary(send_sem);
-    write_queue = xQueueCreate(WRITE_QUEUE_SIZE, sizeof(uint8_t *));
+    vSemaphoreCreateBinary(ringbuf_sem);
+
+    // Initialize ring buffer
+    ringbuf_init (&ubloxbuf);
 
     // start udp task
     xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 5, NULL);
