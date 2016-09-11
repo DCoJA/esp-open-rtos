@@ -1,4 +1,3 @@
-#if 1
 #include <stdio.h>
 #include <string.h>
 
@@ -161,9 +160,9 @@ void gps_task(void *pvParameters)
     }
     xSemaphoreGive(i2c_sem);
 
+    // Runnig at lowest priority.  See udpcli.c:user_init.
     while (1) {
-        vTaskDelay(20/portTICK_RATE_MS);
-
+        vTaskDelay(5/portTICK_RATE_MS);
         if (1) {
             uint32_t len = 0;
             xSemaphoreTake(ringbuf_sem, portMAX_DELAY);
@@ -203,4 +202,3 @@ void gps_task(void *pvParameters)
         xSemaphoreGive(send_sem);
     }
 }
-#endif
