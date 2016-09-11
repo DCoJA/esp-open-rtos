@@ -246,11 +246,25 @@ void baro_task(void *pvParameters)
 {
     bmp280_init();
 
+    int count = 0;
     struct LRpacket pkt;
     portTickType xLastWakeTime = xTaskGetTickCount();
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 20/portTICK_RATE_MS);
         bmp280_read_sample(pkt.data);
+
+        // Also send TOUT voltage
+        union { float f; uint8_t bytes[sizeof(float)]; } voltage;
+
+        if (count == 0) {
+            // update every second. 1/19 ATT
+            voltage.f = sdk_system_adc_read()/1024.0 * 19;
+            // printf("voltage %f\n", voltage.f);
+        }
+        if (++count == 50) {
+            count = 0;
+        }
+        memcpy (&pkt.data[12], voltage.bytes, sizeof(voltage));
         // Send it
         xSemaphoreTake(send_sem, portMAX_DELAY);
         pkt.head = 0xD3;

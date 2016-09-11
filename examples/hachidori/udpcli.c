@@ -116,15 +116,15 @@ void user_init(void)
     ringbuf_init (&ubloxbuf);
 
     // start udp task
-    xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 5, NULL);
+    xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 6, NULL);
 
     while (sockfd < 0) {
         vTaskDelay(100 / portTICK_RATE_MS);
     }
 
     // Create sensor and pwm tasks
-    xTaskCreate(imu_task, (int8_t *)"imu_task", 512, (void*)sockfd, 4, NULL);
-    xTaskCreate(pwm_task, (int8_t *)"pwm_task", 256, (void*)sockfd, 3, NULL);
-    xTaskCreate(baro_task, (int8_t *)"baro_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(imu_task, (int8_t *)"imu_task", 512, (void*)sockfd, 5, NULL);
+    xTaskCreate(pwm_task, (int8_t *)"pwm_task", 256, (void*)sockfd, 4, NULL);
+    xTaskCreate(baro_task, (int8_t *)"baro_task", 512, (void*)sockfd, 3, NULL);
     xTaskCreate(gps_task, (int8_t *)"gps_task", 512, (void*)sockfd, 2, NULL);
 }
