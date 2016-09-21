@@ -266,6 +266,9 @@ void imu_task(void *pvParameters)
 {
     uint8_t rv;
 
+    //
+    vTaskDelay(1000/portTICK_RATE_MS);
+       
     if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
     }
