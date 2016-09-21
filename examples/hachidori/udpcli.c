@@ -29,6 +29,7 @@ extern void imu_task(void *pvParameters);
 extern void pwm_task(void *pvParameters);
 extern void baro_task(void *pvParameters);
 extern void gps_task(void *pvParameters);
+extern void fs_task(void *pvParameters);
 
 static int sockfd = -1;
 
@@ -123,8 +124,9 @@ void user_init(void)
     }
 
     // Create sensor and pwm tasks
-    xTaskCreate(imu_task, (int8_t *)"imu_task", 512, (void*)sockfd, 5, NULL);
+    xTaskCreate(imu_task, (int8_t *)"imu_task", 768, (void*)sockfd, 5, NULL);
     xTaskCreate(pwm_task, (int8_t *)"pwm_task", 256, (void*)sockfd, 4, NULL);
     xTaskCreate(baro_task, (int8_t *)"baro_task", 512, (void*)sockfd, 3, NULL);
     xTaskCreate(gps_task, (int8_t *)"gps_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(fs_task, (int8_t *)"fs_task", 512, (void*)sockfd, 2, NULL);
 }

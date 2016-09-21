@@ -18,6 +18,8 @@
 
 #include "ringbuf.h"
 
+#include "MadgwickAHRS.h"
+
 // PCA9685
 #define PCA9685_ADDRESS            0x40
 
@@ -122,6 +124,12 @@ static void pca9685_init(void)
 
 #define NUM_CHANNELS	8
 
+static uint32_t pwm_count = 0;
+static uint16_t last_width[NUM_CHANNELS];
+static bool in_failsafe = false;
+#define MIN_WIDTH 900
+#define MAX_WIDTH 2200
+
 void pwm_task(void *pvParameters)
 {
     pca9685_init();
@@ -147,12 +155,88 @@ void pwm_task(void *pvParameters)
             continue;
         }
 
+        pwm_count++;
+        if (in_failsafe) {
+            continue;
+        }
         for (int i = 0; i < NUM_CHANNELS; i++) {
             uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];
-            if (width >= 900 && width <= 2200) {
+            last_width[i] = width;
+            if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
                 // write ch data to PCA9685
                 pca9685_out(i, width);
             }
         }
     }
+}
+
+// parachute code
+
+#define NUM_MOTORS 4
+
+// DRATE^50 = 0.5
+#define DRATE 0.9862327
+#define DEPSILON 0.01
+
+void fs_task(void *pvParameters)
+{
+ restart:
+    in_failsafe = false;
+    uint32_t last_count = pwm_count;
+    portTickType xLastWakeTime = xTaskGetTickCount();
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_RATE_MS);
+        if (pwm_count) {
+            if (last_count == pwm_count) {
+                break;
+            }
+            last_count = pwm_count;
+        }
+    }
+
+    // start failsafe
+    in_failsafe = true;
+    uint32_t count;
+    count = 0;
+    // decrease pwm exponentially to MIN_WIDTH
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, 20/portTICK_RATE_MS);
+        if (count < 4*50 && last_count != pwm_count) {
+            goto restart;
+        }
+        /* Try to keep horizontal attitude.  Rough AHRS gives the values
+           which estimates current roll and pitch.  Stepwize decreasing
+           of each motor is determined by simple mix of these values
+           according to the position of the motor.  We assume X-copter
+           with motors configured like as:
+           M1   M3       head
+              x     left  ^  right
+           M4   M4       tail
+         */
+        float rup, hup, d[NUM_MOTORS];
+        // 2*rup ~ sin(roll by deg), 2*hup ~ sin(pitch by deg)
+        // We don't compute values by deg for simplicity.
+        rup = q0*q1+q3*q2;
+        hup = q0*q2-q3*q1;
+        d[0] = -rup + hup; // M1 left  head
+        d[1] =  rup - hup; // M2 right tail
+        d[2] =  rup + hup; // M3 right head
+        d[3] = -rup - hup; // M4 left  tail
+        printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
+        //printf("failsafe %d\n", count);
+        count++;
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            uint16_t width = last_width[i];
+            if (i < NUM_MOTORS && d[i] < -DEPSILON) {
+                // limit to avoid invalid values
+                float re = 1.0 + ((d[i] < -1.0) ? -1.0 : d[i]) * DRATE;
+                width = width - (uint16_t)((width - MIN_WIDTH)*re);
+                last_width[i] = width;
+            }
+            if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+                // write ch data to PCA9685
+                pca9685_out(i, width);
+            }
+        }
+     }
 }

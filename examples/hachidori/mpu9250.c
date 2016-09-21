@@ -23,6 +23,8 @@
 
 #include "lrpacket.h"
 
+#include "MadgwickAHRS.h"
+
 /* MPU9250 */
 #define MPU9250_ID	0x71
 
@@ -266,6 +268,9 @@ void imu_task(void *pvParameters)
 {
     uint8_t rv;
 
+    //
+    vTaskDelay(1000/portTICK_RATE_MS);
+       
     if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
     }
@@ -331,6 +336,7 @@ void imu_task(void *pvParameters)
     struct ak_sample akrx;
     struct LRpacket pkt;
     int count = 0;
+    float gx, gy, gz, ax, ay, az, mx, my, mz;
     portTickType xLastWakeTime = xTaskGetTickCount();
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 1/portTICK_RATE_MS);
@@ -344,12 +350,14 @@ void imu_task(void *pvParameters)
         ux.f = ((float)be16_val(rx.d, 0)) * MPU9250_ACCEL_SCALE_1G;
         uy.f = ((float)be16_val(rx.d, 1)) * MPU9250_ACCEL_SCALE_1G;
         uz.f = ((float)be16_val(rx.d, 2)) * MPU9250_ACCEL_SCALE_1G;
+        ax = ux.f; ay = uy.f; az = uz.f;
         memcpy(&pkt.data[0], ux.bytes, sizeof(ux));
         memcpy(&pkt.data[4], uy.bytes, sizeof(uy));
         memcpy(&pkt.data[8], uz.bytes, sizeof(uz));
         ux.f = ((float)be16_val(rx.d, 4)) * GYRO_SCALE;
         uy.f = ((float)be16_val(rx.d, 5)) * GYRO_SCALE;
         uz.f = ((float)be16_val(rx.d, 6)) * GYRO_SCALE;
+        gx = ux.f; gy = uy.f; gz = uz.f;
         memcpy(&pkt.data[12], ux.bytes, sizeof(ux));
         memcpy(&pkt.data[16], uy.bytes, sizeof(uy));
         memcpy(&pkt.data[20], uz.bytes, sizeof(uz));
@@ -377,6 +385,7 @@ void imu_task(void *pvParameters)
             ux.f = ((float)le16_val(akrx.d, 0)) * ak8963_calib[0];
             uy.f = ((float)le16_val(akrx.d, 1)) * ak8963_calib[1];
             uz.f = ((float)le16_val(akrx.d, 2)) * ak8963_calib[2];
+            mx = ux.f; my = uy.f; mz = uz.f;
             memcpy(&pkt.data[0], ux.bytes, sizeof(ux));
             memcpy(&pkt.data[4], uy.bytes, sizeof(uy));
             memcpy(&pkt.data[8], uz.bytes, sizeof(uz));
@@ -388,20 +397,9 @@ void imu_task(void *pvParameters)
             if (n < 0) {
             }
             xSemaphoreGive(send_sem);
-#if 0
-            printf("status  %02x\n", rx.int_status);
-            printf("accel x %02x%02x\n", rx.d[0], rx.d[1]);
-            printf("accel y %02x%02x\n", rx.d[2], rx.d[3]);
-            printf("accel z %02x%02x\n", rx.d[4], rx.d[5]);
-            printf("temp  x %02x%02x\n", rx.d[6], rx.d[7]);
-            printf("gyro  x %02x%02x\n", rx.d[8], rx.d[9]);
-            printf("gyro  y %02x%02x\n", rx.d[10], rx.d[11]);
-            printf("gyro  y %02x%02x\n", rx.d[12], rx.d[13]);
-            printf("mag   x %02x%02x\n", akrx.d[0], akrx.d[1]);
-            printf("mag   y %02x%02x\n", akrx.d[2], akrx.d[3]);
-            printf("mag   z %02x%02x\n", akrx.d[4], akrx.d[5]);
-            printf("st2  %02x\n", akrx.st2);
-#endif
+
+            // adjust mag frame
+            MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
         }
     }
 }
