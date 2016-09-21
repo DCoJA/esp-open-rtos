@@ -12,25 +12,30 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
+#ifdef UBLOX_I2C
 #include "i2c/i2c.h"
+#endif
 
 #include "lrpacket.h"
 
 #include "ringbuf.h"
 
+#ifdef UBLOX_I2C
 // u-blox neo-7m i2c
-
 #define UBLOX_ADDRESS 0x42
 
 #define UBLOX_COUNT_REG 0xfd
 #define UBLOX_RAED_REG 0xff
 
 extern xSemaphoreHandle i2c_sem;
+#endif
+
 extern xSemaphoreHandle send_sem;
 extern xSemaphoreHandle ringbuf_sem;
 
 extern struct ringbuf ubloxbuf;
 
+#ifdef UBLOX_I2C
 static uint16_t ublox_count;
 
 /* Similar with i2c_slave_read but use restart condition when writing
@@ -144,12 +149,76 @@ static int ublox_readn(uint8_t *buf, size_t n)
     return n;
 }
 
+static bool tx_space(size_t len)
+{
+    return true;
+}
+
+#else
+// ublox with uart interface
+// stdin/stdout are connected to null device
+long _read_r(struct _reent *r, int fd, char *ptr, int len)
+{
+    return 0;
+}
+
+long _write_r(struct _reent *r, int fd, const char *ptr, int len)
+{
+    return len;
+}
+
+static int ublox_writen(uint8_t *buf, size_t size)
+{
+    int i;
+    for(i = 0; i < size; i++) {
+        uart_putc_nowait(0, buf[i]);
+    }
+    return i;
+}
+
+static int ublox_readn(uint8_t *buf, size_t size)
+{
+    int i, ch;
+    for(i = 0; i < size; i++) {
+        ch = uart_getc_nowait(0);
+        if (ch < 0) break;
+        buf[i] = ch;
+    }
+    return i;
+}
+
+static bool tx_space(size_t len)
+{
+    size_t n;
+    n = UART_FIFO_MAX - FIELD2VAL(UART_STATUS_TXFIFO_COUNT, UART(0).STATUS);
+    if (n >= len) {
+        return true;
+    }
+    return false;
+}
+
+// Baudrate iterator
+static int
+nextbaud (void)
+{
+    // baud rate list from ardupilot libraries/AP_GPS/AP_GPS.cpp
+    static const int baudrates[] =
+        { 4800, 19200, 38400, 115200, 57600, 9600, 230400 };
+    // try from 38400
+    static int idx = 1;
+
+    idx = (idx + 1) % (sizeof (baudrates) / sizeof (baudrates[0]));
+    return baudrates[idx];
+}
+#endif
+
 static uint8_t cmdbuf[32];
 
 void gps_task(void *pvParameters)
 {
     struct LRpacket pkt;
     int count = 0;
+#ifdef UBLOX_I2C
     uint8_t block[2];
     xSemaphoreTake(i2c_sem, portMAX_DELAY);
     if (!i2c_slave_read_rc(UBLOX_ADDRESS, UBLOX_COUNT_REG, block,
@@ -159,11 +228,19 @@ void gps_task(void *pvParameters)
         vTaskSuspend(NULL);
     }
     xSemaphoreGive(i2c_sem);
+#else
+    // set to u-blox default baud rate
+    uart_set_baud(0, 9600);
+
+    portTickType last_mark = xTaskGetTickCount();
+#endif
+
+    bool in_tune = false;
 
     // Runnig at lowest priority.  See udpcli.c:user_init.
     while (1) {
         vTaskDelay(5/portTICK_RATE_MS);
-        if (1) {
+        if (tx_space (30)) {
             uint32_t len = 0;
             xSemaphoreTake(ringbuf_sem, portMAX_DELAY);
             uint32_t size = ringbuf_size(&ubloxbuf);
@@ -188,7 +265,24 @@ void gps_task(void *pvParameters)
 
         // Read 30bytes.  See above.
         count = ublox_readn(&pkt.data[1], sizeof(pkt.data)-2);
-        if (count == 0) {
+#ifndef UBLOX_I2C
+        if (count == 0
+            || (!memchr (&pkt.data[1], '$', count)
+                && !memchr (&pkt.data[1], 0xb5, count))) {
+            if (xTaskGetTickCount() - last_mark > 2000/portTICK_RATE_MS) {
+                // Couldn't find marker 2 sec.  Try another baudrate.
+                int baud = nextbaud();
+                uart_set_baud(0, baud);
+                // printf("try %d baud\n", baud);
+                last_mark = xTaskGetTickCount();
+                in_tune = true;
+            }
+        } else {
+                last_mark = xTaskGetTickCount();
+                in_tune = false;
+        }
+#endif
+        if (count == 0 || in_tune) {
             continue;
         }
         pkt.data[0] = count;
