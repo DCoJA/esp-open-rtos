@@ -24,6 +24,7 @@
 #include "lrpacket.h"
 
 #include "MadgwickAHRS.h"
+#include "kfacc.h"
 
 /* MPU9250 */
 #define MPU9250_ID	0x71
@@ -400,6 +401,11 @@ void imu_task(void *pvParameters)
 
             // adjust mag frame
             MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
+        } else {
+#ifdef AHRS_1KHZ
+            MadgwickAHRSupdateIMU(gx, gy, gz, ax, ay, az);
+#endif
         }
+        KFACCupdate(ax, ay, az);
     }
 }

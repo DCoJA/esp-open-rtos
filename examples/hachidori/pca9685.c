@@ -19,6 +19,7 @@
 #include "ringbuf.h"
 
 #include "MadgwickAHRS.h"
+#include "kfacc.h"
 
 // PCA9685
 #define PCA9685_ADDRESS            0x40
@@ -125,7 +126,7 @@ static void pca9685_init(void)
 #define NUM_CHANNELS	8
 
 static uint32_t pwm_count = 0;
-static uint16_t last_width[NUM_CHANNELS];
+static float last_width[NUM_CHANNELS];
 static bool in_failsafe = false;
 #define MIN_WIDTH 900
 #define MAX_WIDTH 2200
@@ -161,7 +162,7 @@ void pwm_task(void *pvParameters)
         }
         for (int i = 0; i < NUM_CHANNELS; i++) {
             uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];
-            last_width[i] = width;
+            last_width[i] = (float)width;
             if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
                 // write ch data to PCA9685
                 pca9685_out(i, width);
@@ -173,10 +174,21 @@ void pwm_task(void *pvParameters)
 // parachute code
 
 #define NUM_MOTORS 4
+#define HEPSILON 0.02f
+// (1-DRATE)^100 = 0.5
+#define DRATE (1.0f - 0.9965403f)
 
-// DRATE^50 = 0.5
-#define DRATE 0.9862327
-#define DEPSILON 0.01
+#define GEPSILON 0.1f
+
+static inline float clip(float x)
+{
+    if (x < -0.5f) {
+        return 1.0f;
+    } else if (x > 0.5f) {
+        return 0.0f;
+    }
+    return -x + 0.5f;
+}
 
 void fs_task(void *pvParameters)
 {
@@ -204,38 +216,58 @@ void fs_task(void *pvParameters)
         if (count < 4*50 && last_count != pwm_count) {
             goto restart;
         }
+        count++;
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
            which estimates current roll and pitch.  Stepwize decreasing
            of each motor is determined by simple mix of these values
            according to the position of the motor.  We assume X-copter
            with motors configured like as:
-           M1   M3       head
+           M3   M1       head
               x     left  ^  right
-           M4   M4       tail
+           M2   M4       tail
          */
         float rup, hup, d[NUM_MOTORS];
-        // 2*rup ~ sin(roll by deg), 2*hup ~ sin(pitch by deg)
-        // We don't compute values by deg for simplicity.
+        // These are rough approximations which would be enough for
+        // our purpose.
         rup = q0*q1+q3*q2;
         hup = q0*q2-q3*q1;
-        d[0] = -rup + hup; // M1 left  head
-        d[1] =  rup - hup; // M2 right tail
-        d[2] =  rup + hup; // M3 right head
-        d[3] = -rup - hup; // M4 left  tail
-        printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
-        //printf("failsafe %d\n", count);
-        count++;
-        for (int i = 0; i < NUM_CHANNELS; i++) {
-            uint16_t width = last_width[i];
-            if (i < NUM_MOTORS && d[i] < -DEPSILON) {
-                // limit to avoid invalid values
-                float re = 1.0 + ((d[i] < -1.0) ? -1.0 : d[i]) * DRATE;
-                width = width - (uint16_t)((width - MIN_WIDTH)*re);
-                last_width[i] = width;
+        if (-HEPSILON < rup && HEPSILON > rup
+            && -HEPSILON < hup && HEPSILON > hup) {
+            // Looks leveling.  Try to avoid free fall.
+            printf ("accz %7.3f\n", accz);
+            if (accz < -GEPSILON) {
+		; // Hold power this time
+            } else {
+                for (int i = 0; i < NUM_CHANNELS; i++) {
+                    float width = last_width[i];
+                    if (i < NUM_MOTORS && width > MIN_WIDTH)
+                    {
+                        width = width - (width - MIN_WIDTH)*DRATE;
+                        last_width[i] = width;
+                    }
+                }
             }
+        } else {
+            d[0] =  rup + hup; // M1 right head
+            d[1] = -rup - hup; // M2 left  tail
+            d[2] = -rup + hup; // M3 left  head
+            d[3] =  rup - hup; // M4 right tail
+            printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
+            for (int i = 0; i < NUM_CHANNELS; i++) {
+                float width = last_width[i];
+                if (i < NUM_MOTORS && width > MIN_WIDTH) {
+                    float re = clip(d[i]);
+                    width = width - (width - MIN_WIDTH)*DRATE*re;
+                    last_width[i] = width;
+                }
+            }
+        }
+        
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            float width = last_width[i];
             if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
                 // write ch data to PCA9685
-                pca9685_out(i, width);
+                pca9685_out(i, (uint16_t)width);
             }
         }
      }
