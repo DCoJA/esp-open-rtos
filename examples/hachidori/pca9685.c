@@ -51,9 +51,11 @@
 #define PCA9685_MODE2_OUTNE1_BIT   (1 << 1)
 #define PCA9685_MODE2_OUTNE0_BIT   (1 << 0)
 
-#define PWM_FREQ_HZ 100
+#define PWM_FREQ_HZ 400
 
-#if (PWM_FREQ_HZ == 200)
+#if (PWM_FREQ_HZ == 400)
+#define PCA9685_FREQ_PRESCALE	15
+#elif (PWM_FREQ_HZ == 200)
 #define PCA9685_FREQ_PRESCALE	31
 #elif (PWM_FREQ_HZ == 100)
 #define PCA9685_FREQ_PRESCALE	63
@@ -74,11 +76,20 @@ static void pca9685_write(uint8_t reg, uint8_t val)
     i2c_slave_write(PCA9685_ADDRESS, d, 2);
 }
 
+static void pca9685_write_led_on(uint8_t reg, uint16_t val)
+{
+    uint8_t d[] = { reg+2, val & 0xff, val >> 8 };
+    i2c_slave_write(PCA9685_ADDRESS, d, 3);
+}
+
 static void pca9685_out(int ch, uint16_t width)
 {
     uint32_t length = 0;
     // length = round((width * 4096)/(1000000.f/(freq_hz*(1+epsilon)) - 1
-#if (PWM_FREQ_HZ == 200)
+#if (PWM_FREQ_HZ == 400)
+    // approx 1.6402 with 3259/4096
+    length = ((width * 6718) >> 12) - 1;
+#elif (PWM_FREQ_HZ == 200)
     // approx 0.8201 with 3259/4096
     length = ((width * 3359) >> 12) - 1;
 #elif (PWM_FREQ_HZ == 100)
@@ -92,12 +103,17 @@ static void pca9685_out(int ch, uint16_t width)
 #endif
     xSemaphoreTake(i2c_sem, portMAX_DELAY);
 
+#if 0
     pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
     pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
     pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 2, length & 0xff);
     pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 3, length >> 8);
+#else
+    pca9685_write_led_on(PCA9685_RA_LED0_ON_L + 4*ch, length);
+#endif
 
     xSemaphoreGive(i2c_sem);
+    //printf("ch%d %d(%d)%c", ch, length, width, (ch == 3 ? '\n' : ' '));
 }
 
 static void pca9685_init(void)
@@ -117,13 +133,14 @@ static void pca9685_init(void)
     pca9685_write(PCA9685_RA_PRE_SCALE, PCA9685_FREQ_PRESCALE);
     // Wait 1ms
     vTaskDelay(1/portTICK_RATE_MS);
-    // Restart PCA9685
-    pca9685_write(PCA9685_RA_MODE1, PCA9685_MODE1_RESTART_BIT);
+    // Restart PCA9685, auto-increment enabled
+    pca9685_write(PCA9685_RA_MODE1,
+                  (PCA9685_MODE1_RESTART_BIT|PCA9685_MODE1_AI_BIT));
 
     xSemaphoreGive(i2c_sem);
 }
 
-#define NUM_CHANNELS	8
+#define NUM_CHANNELS	4
 
 static uint32_t pwm_count = 0;
 static float last_width[NUM_CHANNELS];
@@ -174,7 +191,7 @@ void pwm_task(void *pvParameters)
 // parachute code
 
 #define NUM_MOTORS 4
-#define HEPSILON 0.02f
+#define HEPSILON 0.08f
 // (1-DRATE)^100 = 0.5
 #define DRATE (1.0f - 0.9965403f)
 
@@ -182,12 +199,13 @@ void pwm_task(void *pvParameters)
 
 static inline float clip(float x)
 {
+    const float h = 0.5f;
     if (x < -0.5f) {
         return 1.0f;
     } else if (x > 0.5f) {
-        return 0.0f;
+        return 1.0f - h;
     }
-    return -x + 0.5f;
+    return 1.0f - (x + 0.5f)*h;
 }
 
 void fs_task(void *pvParameters)
