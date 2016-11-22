@@ -78,7 +78,7 @@ static void pca9685_write(uint8_t reg, uint8_t val)
 
 static void pca9685_write_led_on(uint8_t reg, uint16_t val)
 {
-    uint8_t d[] = { reg+2, val & 0xff, val >> 8 };
+    uint8_t d[] = { reg + 2, val & 0xff, val >> 8 };
     i2c_slave_write(PCA9685_ADDRESS, d, 3);
 }
 
@@ -87,10 +87,10 @@ static void pca9685_out(int ch, uint16_t width)
     uint32_t length = 0;
     // length = round((width * 4096)/(1000000.f/(freq_hz*(1+epsilon)) - 1
 #if (PWM_FREQ_HZ == 400)
-    // approx 1.6402 with 3259/4096
+    // approx 1.6402 with 6718/4096
     length = ((width * 6718) >> 12) - 1;
 #elif (PWM_FREQ_HZ == 200)
-    // approx 0.8201 with 3259/4096
+    // approx 0.8201 with 3359/4096
     length = ((width * 3359) >> 12) - 1;
 #elif (PWM_FREQ_HZ == 100)
     // approx 0.4099 with 1679/4096
@@ -103,14 +103,11 @@ static void pca9685_out(int ch, uint16_t width)
 #endif
     xSemaphoreTake(i2c_sem, portMAX_DELAY);
 
-#if 0
-    pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
-    pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
-    pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 2, length & 0xff);
-    pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 3, length >> 8);
-#else
+    // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
+    // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
+    // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 2, length & 0xff);
+    // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 3, length >> 8);
     pca9685_write_led_on(PCA9685_RA_LED0_ON_L + 4*ch, length);
-#endif
 
     xSemaphoreGive(i2c_sem);
     //printf("ch%d %d(%d)%c", ch, length, width, (ch == 3 ? '\n' : ' '));
@@ -140,7 +137,7 @@ static void pca9685_init(void)
     xSemaphoreGive(i2c_sem);
 }
 
-#define NUM_CHANNELS	4
+#define NUM_CHANNELS	8
 
 static uint32_t pwm_count = 0;
 static float last_width[NUM_CHANNELS];
