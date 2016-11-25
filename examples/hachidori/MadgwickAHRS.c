@@ -29,13 +29,9 @@ Sqrt (float x)
   return u.f;
 }
 
-#ifdef AHRS_1KHZ
-# define DT 0.001f	// dT 1ms
-#else
-# define DT 0.01f	// dT 10ms
-#endif
-#define sampleFreq	(1.0/DT)	// sample frequency in Hz
-#define betaDef		0.1f		// 2 * proportional gain
+#define sampleFreq	1000	// sample frequency in Hz
+#define DT		(1.0f/sampleFreq)
+#define betaDef		0.2f	// 2 * proportional gain
 
 volatile float beta = betaDef;	// 2 * proportional gain (Kp)
 // quaternion of sensor frame relative to auxiliary frame

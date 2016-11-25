@@ -101,7 +101,6 @@ static void pca9685_out(int ch, uint16_t width)
 #else
 #error "unknown freq_hz"
 #endif
-    xSemaphoreTake(i2c_sem, portMAX_DELAY);
 
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
@@ -109,7 +108,6 @@ static void pca9685_out(int ch, uint16_t width)
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 3, length >> 8);
     pca9685_write_led_on(PCA9685_RA_LED0_ON_L + 4*ch, length);
 
-    xSemaphoreGive(i2c_sem);
     //printf("ch%d %d(%d)%c", ch, length, width, (ch == 3 ? '\n' : ' '));
 }
 
@@ -139,9 +137,10 @@ static void pca9685_init(void)
 
 #define NUM_CHANNELS	8
 
+bool in_failsafe = false;
+
 static uint32_t pwm_count = 0;
 static float last_width[NUM_CHANNELS];
-static bool in_failsafe = false;
 #define MIN_WIDTH 900
 #define MAX_WIDTH 2200
 
@@ -174,6 +173,8 @@ void pwm_task(void *pvParameters)
         if (in_failsafe) {
             continue;
         }
+
+        xSemaphoreTake(i2c_sem, portMAX_DELAY);
         for (int i = 0; i < NUM_CHANNELS; i++) {
             uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];
             last_width[i] = (float)width;
@@ -182,27 +183,46 @@ void pwm_task(void *pvParameters)
                 pca9685_out(i, width);
             }
         }
+        xSemaphoreGive(i2c_sem);
     }
 }
 
 // parachute code
 
 #define NUM_MOTORS 4
-#define HEPSILON 0.08f
 // (1-DRATE)^100 = 0.5
 #define DRATE (1.0f - 0.9965403f)
-
 #define GEPSILON 0.1f
 
-static inline float clip(float x)
+#define MAXADJ 50
+#define ROLL 1.0f
+#define PITCH 1.0f
+#define YAW 10.0f
+
+#define PGAIN 0.6f
+#define DGAIN 40.00f
+#define GCOEFF 150.0f
+#define ATT 0.1f
+#define BCOUNT 10
+
+static float dp[4], dd[4];
+static float yp0 = 0.0f, yp1 = 0.0f;
+static float stick_last = 900.0f;
+static float base_adjust[4];
+static float adjust[4];
+
+static float
+Sqrt (float x)
 {
-    const float h = 0.5f;
-    if (x < -0.5f) {
-        return 1.0f;
-    } else if (x > 0.5f) {
-        return 1.0f - h;
-    }
-    return 1.0f - (x + 0.5f)*h;
+    union { int32_t i; float f; } u;
+    int32_t i;
+    u.f = x;
+    i = u.i;
+    i -= 1 << 23;
+    i >>= 1;
+    i += 1 << 29;
+    u.i = i;
+    return u.f;
 }
 
 void fs_task(void *pvParameters)
@@ -225,13 +245,30 @@ void fs_task(void *pvParameters)
     in_failsafe = true;
     uint32_t count;
     count = 0;
-    // decrease pwm exponentially to MIN_WIDTH
+
+    // Take the mean value of last widths as the virtual throttle
+    uint16_t sum = 0;
+    for (int i = 0; i < NUM_MOTORS; i++) {
+        sum += last_width[i];
+    }
+    stick_last = (float)(sum / NUM_MOTORS);
+
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 20/portTICK_RATE_MS);
-        if (count < 4*50 && last_count != pwm_count) {
+        vTaskDelayUntil(&xLastWakeTime, 10/portTICK_RATE_MS);
+        if (count < 4*100 && last_count != pwm_count) {
             goto restart;
         }
         count++;
+
+        float stick;
+        // Try to avoid free fall.
+        if (accz < -GEPSILON) {
+            stick = stick_last;
+        } else {
+            // decrease pwm exponentially to MIN_WIDTH
+            stick = (1-DRATE)*stick_last + DRATE*MIN_WIDTH;
+            stick_last = stick;
+        }
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
            which estimates current roll and pitch.  Stepwize decreasing
            of each motor is determined by simple mix of these values
@@ -241,49 +278,59 @@ void fs_task(void *pvParameters)
               x     left  ^  right
            M2   M4       tail
          */
-        float rup, hup, d[NUM_MOTORS];
+        float rup, hup, ydelta, d[NUM_MOTORS];
         // These are rough approximations which would be enough for
         // our purpose.
         rup = q0*q1+q3*q2;
         hup = q0*q2-q3*q1;
-        if (-HEPSILON < rup && HEPSILON > rup
-            && -HEPSILON < hup && HEPSILON > hup) {
-            // Looks leveling.  Try to avoid free fall.
-            printf ("accz %7.3f\n", accz);
-            if (accz < -GEPSILON) {
-		; // Hold power this time
-            } else {
-                for (int i = 0; i < NUM_CHANNELS; i++) {
-                    float width = last_width[i];
-                    if (i < NUM_MOTORS && width > MIN_WIDTH)
-                    {
-                        width = width - (width - MIN_WIDTH)*DRATE;
-                        last_width[i] = width;
-                    }
-                }
-            }
+
+        // Estimated yaw change
+        if (yp0 == 0.0f && yp1 == 0.0f) {
+	    ydelta = 0;
         } else {
-            d[0] =  rup + hup; // M1 right head
-            d[1] = -rup - hup; // M2 left  tail
-            d[2] = -rup + hup; // M3 left  head
-            d[3] =  rup - hup; // M4 right tail
-            printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
-            for (int i = 0; i < NUM_CHANNELS; i++) {
-                float width = last_width[i];
-                if (i < NUM_MOTORS && width > MIN_WIDTH) {
-                    float re = clip(d[i]);
-                    width = width - (width - MIN_WIDTH)*DRATE*re;
-                    last_width[i] = width;
-                }
+            float y0, y1, recpNorm;
+            y0 = q0*q0-q1*q1+q2*q2-q3*q3;
+            y1 = 2*(q0*q3-q1*q2);
+            recpNorm = 1/Sqrt(y0*y0+y1*y1);
+            y0 *= recpNorm;
+            y1 *= recpNorm;
+            ydelta = yp0*y1 - yp1*y0;
+            yp0 = y0;
+            yp1 = y1;
+        }
+
+        d[0] =  ROLL*rup + PITCH*hup + YAW*ydelta; // M1 right head
+        d[1] = -ROLL*rup - PITCH*hup + YAW*ydelta; // M2 left  tail
+        d[2] = -ROLL*rup + PITCH*hup - YAW*ydelta; // M3 left  head
+        d[3] =  ROLL*rup - PITCH*hup - YAW*ydelta; // M4 right tail
+
+        printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
+        for (int i = 0; i < NUM_MOTORS; i++) {
+            float adj = base_adjust[i];
+            float pv = d[i];
+            float dv = dp[i]-d[i];
+            dp[i] = d[i];
+            dd[i] = dv;
+            adj = (1-ATT)*(pv*PGAIN-dv*DGAIN)*GCOEFF + ATT*adj;
+            if (adj > MAXADJ) {
+                adj = MAXADJ;
+            } else if (adj < -MAXADJ) {
+                adj = -MAXADJ;
+            }
+            adjust[i] = adj;
+            if ((count % BCOUNT) == 0) {
+                base_adjust[i] = adj;
             }
         }
         
-        for (int i = 0; i < NUM_CHANNELS; i++) {
-            float width = last_width[i];
+        xSemaphoreTake(i2c_sem, portMAX_DELAY);
+        for (int i = 0; i < NUM_MOTORS; i++) {
+            uint16_t width = (uint16_t)(stick + adjust[i]);
             if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
                 // write ch data to PCA9685
-                pca9685_out(i, (uint16_t)width);
+                pca9685_out(i, width);
             }
         }
+        xSemaphoreGive(i2c_sem);
      }
 }
