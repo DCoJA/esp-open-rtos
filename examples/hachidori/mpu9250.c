@@ -264,7 +264,6 @@ static void ak8963_start(void)
 }
 
 extern xSemaphoreHandle send_sem;
-extern bool in_failsafe;
 
 void imu_task(void *pvParameters)
 {
@@ -372,14 +371,13 @@ void imu_task(void *pvParameters)
         }
         xSemaphoreGive(send_sem);
 
-        if ((count % 10) == 0) {
+        if ((count++ % 10) == 0) {
             ak8963_read_sample(&akrx);
             // trigger next sampling of ak8963
             ak8963_read_sample_start();
 
             // skip if overflow
             if (akrx.st2 & 0x08) {
-                count++;
                 continue;
             }
 
@@ -401,14 +399,9 @@ void imu_task(void *pvParameters)
             }
             xSemaphoreGive(send_sem);
 
-            // adjust mag frame
+            beta = (count < 1000) ? 2.0f : 0.2f;
             MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
             KFACCupdate(ax, ay, az);
-        } else if (in_failsafe) {
-            // Compute only in failsafe mode
-            MadgwickAHRSupdateIMU(gx, gy, gz, ax, ay, az);
-            KFACCupdate(ax, ay, az);
         }
-        count++;
     }
 }

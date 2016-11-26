@@ -137,10 +137,10 @@ static void pca9685_init(void)
 
 #define NUM_CHANNELS	8
 
-bool in_failsafe = false;
-
+static bool in_failsafe = false;
 static uint32_t pwm_count = 0;
 static float last_width[NUM_CHANNELS];
+
 #define MIN_WIDTH 900
 #define MAX_WIDTH 2200
 
@@ -149,6 +149,7 @@ void pwm_task(void *pvParameters)
     pca9685_init();
 
     struct LRpacket pkt;
+    portTickType last_time = xTaskGetTickCount();
     while (1) {
         // Wait udp packet
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
@@ -172,6 +173,15 @@ void pwm_task(void *pvParameters)
         pwm_count++;
         if (in_failsafe) {
             continue;
+        }
+
+        // skip output so as not to eat up cpu time with bit-bang
+        portTickType current_time = xTaskGetTickCount();
+        if ((uint32_t)(current_time - last_time) <= 4) {
+            last_time = current_time;
+            continue;
+        } else {
+            last_time = current_time;
         }
 
         xSemaphoreTake(i2c_sem, portMAX_DELAY);
@@ -199,31 +209,17 @@ void pwm_task(void *pvParameters)
 #define PITCH 1.0f
 #define YAW 10.0f
 
-#define PGAIN 0.6f
-#define DGAIN 40.00f
-#define GCOEFF 150.0f
-#define ATT 0.1f
+#define PGAIN 0.9f
+#define DGAIN 32.00f
+#define GCOEFF 200.0f
+#define FORGET 0.1f
 #define BCOUNT 10
 
 static float dp[4], dd[4];
-static float yp0 = 0.0f, yp1 = 0.0f;
+static float qp0 = 1.0f, qp1 = 0.0f, qp2 = 0.0f, qp3 = 0.0f;
 static float stick_last = 900.0f;
 static float base_adjust[4];
 static float adjust[4];
-
-static float
-Sqrt (float x)
-{
-    union { int32_t i; float f; } u;
-    int32_t i;
-    u.f = x;
-    i = u.i;
-    i -= 1 << 23;
-    i >>= 1;
-    i += 1 << 29;
-    u.i = i;
-    return u.f;
-}
 
 void fs_task(void *pvParameters)
 {
@@ -241,7 +237,7 @@ void fs_task(void *pvParameters)
         }
     }
 
-    // start failsafe
+    // Start failsafe
     in_failsafe = true;
     uint32_t count;
     count = 0;
@@ -265,12 +261,12 @@ void fs_task(void *pvParameters)
         if (accz < -GEPSILON) {
             stick = stick_last;
         } else {
-            // decrease pwm exponentially to MIN_WIDTH
+            // Decrease pwm exponentially to MIN_WIDTH
             stick = (1-DRATE)*stick_last + DRATE*MIN_WIDTH;
             stick_last = stick;
         }
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
-           which estimates current roll and pitch.  Stepwize decreasing
+           which estimate current roll and pitch.  Adjustment value
            of each motor is determined by simple mix of these values
            according to the position of the motor.  We assume X-copter
            with motors configured like as:
@@ -284,34 +280,35 @@ void fs_task(void *pvParameters)
         rup = q0*q1+q3*q2;
         hup = q0*q2-q3*q1;
 
-        // Estimated yaw change
-        if (yp0 == 0.0f && yp1 == 0.0f) {
+        // Estimate yaw change
+        if (qp0 == 1.0f) {
 	    ydelta = 0;
         } else {
-            float y0, y1, recpNorm;
-            y0 = q0*q0-q1*q1+q2*q2-q3*q3;
-            y1 = 2*(q0*q3-q1*q2);
-            recpNorm = 1/Sqrt(y0*y0+y1*y1);
-            y0 *= recpNorm;
-            y1 *= recpNorm;
-            ydelta = yp0*y1 - yp1*y0;
-            yp0 = y0;
-            yp1 = y1;
+            float qDot0, qDot1, qDot2, qDot3;
+            qDot0 = q0 - qp0;
+            qDot1 = q1 - qp1;
+            qDot2 = q2 - qp2;
+            qDot3 = q3 - qp3;
+            // yaw speed at body frame is 2 * qDot * qBar
+            ydelta = -q3*qDot0 - q2*qDot1 + q1*qDot2 + q0*qDot3;
         }
+        qp0 = q0;
+        qp1 = q1;
+        qp2 = q2;
+        qp3 = q3;
 
         d[0] =  ROLL*rup + PITCH*hup + YAW*ydelta; // M1 right head
         d[1] = -ROLL*rup - PITCH*hup + YAW*ydelta; // M2 left  tail
         d[2] = -ROLL*rup + PITCH*hup - YAW*ydelta; // M3 left  head
         d[3] =  ROLL*rup - PITCH*hup - YAW*ydelta; // M4 right tail
-
-        printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
+        //printf ("d0 %7.3f d1 %7.3f d2 %7.3f d3 %7.3f\n", d[0], d[1], d[2], d[3]);
         for (int i = 0; i < NUM_MOTORS; i++) {
             float adj = base_adjust[i];
             float pv = d[i];
             float dv = dp[i]-d[i];
             dp[i] = d[i];
             dd[i] = dv;
-            adj = (1-ATT)*(pv*PGAIN-dv*DGAIN)*GCOEFF + ATT*adj;
+            adj = (1-FORGET)*(pv*PGAIN-dv*DGAIN)*GCOEFF + FORGET*adj;
             if (adj > MAXADJ) {
                 adj = MAXADJ;
             } else if (adj < -MAXADJ) {
