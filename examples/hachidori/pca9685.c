@@ -140,6 +140,7 @@ void pwm_task(void *pvParameters)
     pca9685_init();
 
     struct LRpacket pkt;
+    portTickType last_time = xTaskGetTickCount();
     while (1) {
         // Wait udp packet
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
@@ -158,6 +159,15 @@ void pwm_task(void *pvParameters)
             continue;
         } else if (pkt.tos != TOS_PWM) {
             continue;
+        }
+
+        // skip output so as not to eat up cpu time with bit-bang
+        portTickType current_time = xTaskGetTickCount();
+        if ((uint32_t)(current_time - last_time) <= 4) {
+            last_time = current_time;
+            continue;
+        } else {
+            last_time = current_time;
         }
 
         for (int i = 0; i < NUM_CHANNELS; i++) {
