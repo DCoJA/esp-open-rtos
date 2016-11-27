@@ -76,7 +76,7 @@ static inline bool read_sda(void)
 {
     gpio_write(g_sda_pin, 1);
     // TODO: Without this delay we get arbitration lost in i2c_stop
-    //i2c_delay();
+    i2c_delay();
     return gpio_read(g_sda_pin); // Clock high, valid ACK
 }
 
