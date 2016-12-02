@@ -46,8 +46,8 @@
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2*idx+1] << 8) | v[2*idx]))
 #define uint16_val(v, idx)(((uint16_t)v[2*idx+1] << 8) | v[2*idx])
 
-extern xSemaphoreHandle i2c_sem;
-extern xSemaphoreHandle send_sem;
+extern SemaphoreHandle_t i2c_sem;
+extern SemaphoreHandle_t send_sem;
 
 static bool enable_hum = false;
 
@@ -248,9 +248,9 @@ void baro_task(void *pvParameters)
 
     int count = 0;
     struct LRpacket pkt;
-    portTickType xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 20/portTICK_RATE_MS);
+        vTaskDelayUntil(&xLastWakeTime, 20/portTICK_PERIOD_MS);
         bmp280_read_sample(pkt.data);
 
         // Also send TOUT voltage

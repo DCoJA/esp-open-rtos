@@ -62,8 +62,8 @@
 #error "unknown freq_hz"
 #endif
 
-extern xSemaphoreHandle i2c_sem;
-extern xSemaphoreHandle ringbuf_sem;
+extern SemaphoreHandle_t i2c_sem;
+extern SemaphoreHandle_t ringbuf_sem;
 
 extern struct ringbuf ubloxbuf;
 
@@ -98,15 +98,12 @@ static void pca9685_out(int ch, uint16_t width)
 #else
 #error "unknown freq_hz"
 #endif
-    xSemaphoreTake(i2c_sem, portMAX_DELAY);
 
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 2, length & 0xff);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 3, length >> 8);
     pca9685_write_led_on(PCA9685_RA_LED0_ON_L + 4*ch, length);
- 
-    xSemaphoreGive(i2c_sem);
 }
 
 static void pca9685_init(void)
@@ -125,7 +122,7 @@ static void pca9685_init(void)
     // prescale 67 for freq 99Hz
     pca9685_write(PCA9685_RA_PRE_SCALE, PCA9685_FREQ_PRESCALE);
     // Wait 1ms
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
     // Restart PCA9685, auto-increment enabled
     pca9685_write(PCA9685_RA_MODE1,
                   (PCA9685_MODE1_RESTART_BIT|PCA9685_MODE1_AI_BIT));
@@ -140,7 +137,7 @@ void pwm_task(void *pvParameters)
     pca9685_init();
 
     struct LRpacket pkt;
-    portTickType last_time = xTaskGetTickCount();
+    TickType_t last_time = xTaskGetTickCount();
     while (1) {
         // Wait udp packet
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
@@ -162,7 +159,7 @@ void pwm_task(void *pvParameters)
         }
 
         // skip output so as not to eat up cpu time with bit-bang
-        portTickType current_time = xTaskGetTickCount();
+        TickType_t current_time = xTaskGetTickCount();
         if ((uint32_t)(current_time - last_time) <= 4) {
             last_time = current_time;
             continue;
@@ -170,6 +167,7 @@ void pwm_task(void *pvParameters)
             last_time = current_time;
         }
 
+        xSemaphoreTake(i2c_sem, portMAX_DELAY);
         for (int i = 0; i < NUM_CHANNELS; i++) {
             uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];
             if (width >= 900 && width <= 2200) {
@@ -177,5 +175,6 @@ void pwm_task(void *pvParameters)
                 pca9685_out(i, width);
             }
         }
+        xSemaphoreGive(i2c_sem);
     }
 }

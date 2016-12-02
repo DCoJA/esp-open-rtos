@@ -132,32 +132,32 @@ static bool mpu9250_read_sample(struct sample *rx)
 static void mpu9250_start(void)
 {
     mpu9250_write(PWR_MGMT_2, 0);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     // No LPF
     mpu9250_write(MPU_CONFIG, 0);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     // Sample rate 1000Hz
     mpu9250_write(SMPLRT_DIV, 0);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     // Gyro 2000dps
     mpu9250_write(GYRO_CONFIG, 3<<3);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     // Accel full scale 16g
     mpu9250_write(ACCEL_CONFIG, 3<<3);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     // INT enable on RDY
     mpu9250_write(INT_ENABLE, 1);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 
     uint8_t val = mpu9250_read(INT_PIN_CFG);
     val |= 0x30;
     mpu9250_write(INT_PIN_CFG, val);
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
 }
 
 static void slv0_readn(uint8_t reg, uint8_t size)
@@ -180,7 +180,7 @@ static void slv0_write1(uint8_t reg, uint8_t out)
 static uint8_t ak8963_read(uint8_t reg)
 {
     slv0_readn(reg, 1);
-    vTaskDelay(10 / portTICK_RATE_MS);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
     uint8_t rv = mpu9250_read(EXT_SENS_DATA_00);
 
@@ -191,7 +191,7 @@ static uint8_t ak8963_read(uint8_t reg)
 static void ak8963_write(uint8_t reg, uint8_t val)
 {
     slv0_write1(reg, val);
-    vTaskDelay(10 / portTICK_RATE_MS);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
     mpu9250_write(I2C_SLV0_CTRL, 0);
 }
@@ -225,7 +225,7 @@ struct ak_asa {
 static bool ak8963_read_asa(struct ak_asa *rx)
 {
     slv0_readn(AK8963_ASAX, 3);
-    vTaskDelay(10 / portTICK_RATE_MS);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
     static struct ak_asa tx;
     tx.cmd = 0x80 | EXT_SENS_DATA_00;
@@ -260,14 +260,14 @@ static void ak8963_start(void)
     // Start measurement
 }
 
-extern xSemaphoreHandle send_sem;
+extern SemaphoreHandle_t send_sem;
 
 void imu_task(void *pvParameters)
 {
     uint8_t rv;
 
     //
-    vTaskDelay(1000/portTICK_RATE_MS);
+    vTaskDelay(1000/portTICK_PERIOD_MS);
        
     if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
@@ -283,24 +283,24 @@ void imu_task(void *pvParameters)
         // Disable master I2C here
         if ((rv = mpu9250_read(USER_CTRL)) & (1<<5)) {
             mpu9250_write(USER_CTRL, rv &~ (1<<5));
-            vTaskDelay(10 / portTICK_RATE_MS);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
         }
 
         // Reset
         mpu9250_write(PWR_MGMT_1, 0x80);
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
 
         // Disable I2C interface
         mpu9250_write(USER_CTRL, 0x10);
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
 
         // Wake up with appropriate clock
         mpu9250_write(PWR_MGMT_1, 0x03);
-        vTaskDelay(5 / portTICK_RATE_MS);
+        vTaskDelay(5 / portTICK_PERIOD_MS);
         if (mpu9250_read(PWR_MGMT_1) == 0x03)
             break;
 
-        vTaskDelay(10 / portTICK_RATE_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
         if (mpu9250_ready())
             break;
     }
@@ -328,15 +328,15 @@ void imu_task(void *pvParameters)
     ak8963_start();
 
     ak8963_read_sample_start();
-    vTaskDelay(10/portTICK_RATE_MS);
+    vTaskDelay(10/portTICK_PERIOD_MS);
 
     struct sample rx;
     struct ak_sample akrx;
     struct LRpacket pkt;
     int count = 0;
-    portTickType xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 1/portTICK_RATE_MS);
+        vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
         if (!mpu9250_ready())
             continue;
 

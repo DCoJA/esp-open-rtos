@@ -19,6 +19,9 @@
 #define i2c_bbpll_en_audio_clock_out_lsb 7
 #define i2c_bbpll_hostid 4
 
+void sdk_rom_i2c_writeReg_Mask(uint32_t block, uint32_t host_id,
+        uint32_t reg_add, uint32_t Msb, uint32_t Lsb, uint32_t indata);
+
 #define i2c_writeReg_Mask(block, host_id, reg_add, Msb, Lsb, indata) \
     sdk_rom_i2c_writeReg_Mask(block, host_id, reg_add, Msb, Lsb, indata)
 #define i2c_readReg_Mask(block, host_id, reg_add, Msb, Lsb) \
@@ -41,7 +44,7 @@
 
 static struct SLCDescriptor i2s_desc[I2SNDMABUF];
 static uint32_t i2s_buf[I2SNDMABUF*I2SBUFLEN];
-static xQueueHandle dmaqueue;
+static QueueHandle_t dmaqueue;
 
 static void slc_isr(void)
 {

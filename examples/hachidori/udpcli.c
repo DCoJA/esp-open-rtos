@@ -29,6 +29,7 @@ extern void imu_task(void *pvParameters);
 extern void pwm_task(void *pvParameters);
 extern void baro_task(void *pvParameters);
 extern void gps_task(void *pvParameters);
+extern void fs_task(void *pvParameters);
 
 static int sockfd = -1;
 
@@ -43,7 +44,7 @@ static void udp_task(void *pvParameters)
     int s = socket(AF_INET, SOCK_DGRAM, 0);
     if(s < 0) {
         printf("... Failed to allocate socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         return;
     }
 
@@ -62,14 +63,14 @@ static void udp_task(void *pvParameters)
     rtn = bind (s, (struct sockaddr *)&caddr, sizeof(caddr));
     if(rtn < 0) {
         printf("... Failed to bind socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
     rtn = connect(s, (struct sockaddr *) &saddr, sizeof(saddr));
     if (rtn < 0) {
         printf("... Failed to connect socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
@@ -80,9 +81,9 @@ static void udp_task(void *pvParameters)
     }
 }
 
-xSemaphoreHandle i2c_sem;
-xSemaphoreHandle send_sem;
-xSemaphoreHandle ringbuf_sem;
+SemaphoreHandle_t i2c_sem;
+SemaphoreHandle_t send_sem;
+SemaphoreHandle_t ringbuf_sem;
 
 struct ringbuf ubloxbuf;
 
@@ -116,15 +117,15 @@ void user_init(void)
     ringbuf_init (&ubloxbuf);
 
     // start udp task
-    xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 6, NULL);
+    xTaskCreate(udp_task, "udp_task", 256, NULL, 6, NULL);
 
     while (sockfd < 0) {
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 
     // Create sensor and pwm tasks
-    xTaskCreate(imu_task, (int8_t *)"imu_task", 512, (void*)sockfd, 5, NULL);
-    xTaskCreate(pwm_task, (int8_t *)"pwm_task", 256, (void*)sockfd, 4, NULL);
-    xTaskCreate(baro_task, (int8_t *)"baro_task", 512, (void*)sockfd, 3, NULL);
-    xTaskCreate(gps_task, (int8_t *)"gps_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(imu_task, "imu_task", 768, (void*)sockfd, 5, NULL);
+    xTaskCreate(pwm_task, "pwm_task", 256, (void*)sockfd, 4, NULL);
+    xTaskCreate(baro_task, "baro_task", 512, (void*)sockfd, 3, NULL);
+    xTaskCreate(gps_task, "gps_task", 512, (void*)sockfd, 2, NULL);
 }
