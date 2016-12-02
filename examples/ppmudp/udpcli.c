@@ -1,8 +1,9 @@
 /* A udp client.
-   Send IMU/compass samples and recieve pmw data.
+   Send pwm data to server.
  */
 
 #include "espressif/esp_common.h"
+#include "espressif/user_interface.h"
 #include "esp/uart.h"
 
 #include <string.h>
@@ -95,6 +96,15 @@ void user_init(void)
 
     // required to call wifi_set_opmode before station_set_config
     sdk_wifi_set_opmode(STATION_MODE);
+#ifdef USE_STATIC_IP_ADDRESS
+    sdk_wifi_station_dhcpc_stop();
+    struct ip_info info;
+    memset(&info, 0, sizeof(info));
+    info.ip.addr = ipaddr_addr(UDP_CLIENT);
+    info.netmask.addr = ipaddr_addr("255.255.255.0");
+    info.gw.addr = ipaddr_addr(UDP_SERVER);
+    sdk_wifi_set_ip_info(STATION_IF, &info);
+#endif
     sdk_wifi_station_set_config(&config);
 
     vSemaphoreCreateBinary(send_sem);
