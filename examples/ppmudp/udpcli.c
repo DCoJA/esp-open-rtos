@@ -37,7 +37,7 @@ static void udp_task(void *pvParameters)
     int s = socket(AF_INET, SOCK_DGRAM, 0);
     if(s < 0) {
         printf("... Failed to allocate socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         return;
     }
 
@@ -56,14 +56,14 @@ static void udp_task(void *pvParameters)
     rtn = bind (s, (struct sockaddr *)&caddr, sizeof(caddr));
     if(rtn < 0) {
         printf("... Failed to bind socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
     rtn = connect(s, (struct sockaddr *) &saddr, sizeof(saddr));
     if (rtn < 0) {
         printf("... Failed to connect socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
@@ -74,7 +74,7 @@ static void udp_task(void *pvParameters)
     }
 }
 
-xSemaphoreHandle send_sem;
+SemaphoreHandle_t send_sem;
 
 void user_init(void)
 {
@@ -110,12 +110,12 @@ void user_init(void)
     vSemaphoreCreateBinary(send_sem);
 
     // start udp task
-    xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 3, NULL);
+    xTaskCreate(udp_task, "udp_task", 256, NULL, 3, NULL);
 
     while (sockfd < 0) {
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 
     // Create lpc tasks
-    xTaskCreate(lpc_task, (int8_t *)"lpc_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(lpc_task, "lpc_task", 512, (void*)sockfd, 2, NULL);
 }

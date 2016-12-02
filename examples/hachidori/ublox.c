@@ -27,11 +27,11 @@
 #define UBLOX_COUNT_REG 0xfd
 #define UBLOX_RAED_REG 0xff
 
-extern xSemaphoreHandle i2c_sem;
+extern SemaphoreHandle_t i2c_sem;
 #endif
 
-extern xSemaphoreHandle send_sem;
-extern xSemaphoreHandle ringbuf_sem;
+extern SemaphoreHandle_t send_sem;
+extern SemaphoreHandle_t ringbuf_sem;
 
 extern struct ringbuf ubloxbuf;
 
@@ -232,14 +232,14 @@ void gps_task(void *pvParameters)
     // set to u-blox default baud rate
     uart_set_baud(0, 9600);
 
-    portTickType last_mark = xTaskGetTickCount();
+    TickType_t last_mark = xTaskGetTickCount();
 #endif
 
     bool in_tune = false;
 
     // Runnig at lowest priority.  See udpcli.c:user_init.
     while (1) {
-        vTaskDelay(5/portTICK_RATE_MS);
+        vTaskDelay(5/portTICK_PERIOD_MS);
         if (tx_space (30)) {
             uint32_t len = 0;
             xSemaphoreTake(ringbuf_sem, portMAX_DELAY);
@@ -269,7 +269,7 @@ void gps_task(void *pvParameters)
         if (count == 0
             || (!memchr (&pkt.data[1], '$', count)
                 && !memchr (&pkt.data[1], 0xb5, count))) {
-            if (xTaskGetTickCount() - last_mark > 2000/portTICK_RATE_MS) {
+            if (xTaskGetTickCount() - last_mark > 2000/portTICK_PERIOD_MS) {
                 // Couldn't find marker 2 sec.  Try another baudrate.
                 int baud = nextbaud();
                 uart_set_baud(0, baud);

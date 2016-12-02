@@ -30,7 +30,7 @@ static uint8_t lpc_read(uint8_t reg)
     return out;
 }
 
-extern xSemaphoreHandle send_sem;
+extern SemaphoreHandle_t send_sem;
 
 static struct pkt {
     uint8_t head;
@@ -44,15 +44,15 @@ void lpc_task(void *pvParameters)
     pkt.tos = 0;
 
     // Avoid to set SPI_CS(GPIO15) low early in the boot sequence
-    vTaskDelay(1000/portTICK_RATE_MS);
+    vTaskDelay(1000/portTICK_PERIOD_MS);
 
     if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
     }
 
-    portTickType xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 1/portTICK_RATE_MS);
+        vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
         if (lpc_read(READY)) {
             for (int i = 0; i < 2*CPPM_NUM_CHANNELS; i++) {
                 pkt.data[i] = lpc_read(i);

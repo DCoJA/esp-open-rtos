@@ -42,9 +42,9 @@ void fs_task(void *pvParameters)
 #endif
     in_failsafe = false;
     uint32_t last_count = pwm_count;
-    portTickType xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_RATE_MS);
+        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_PERIOD_MS);
         if (pwm_count) {
             if (last_count == pwm_count) {
                 break;
@@ -66,7 +66,7 @@ void fs_task(void *pvParameters)
     stick_last = (float)(sum / NUM_MOTORS);
 
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 10/portTICK_RATE_MS);
+        vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
 #ifdef RESTART_AT_FAST_RECONNECT
         if (count < 4*100 && last_count != pwm_count) {
             goto restart;

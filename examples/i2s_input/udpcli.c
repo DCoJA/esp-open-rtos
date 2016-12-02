@@ -1,5 +1,5 @@
 /* A udp client.
-   Send IMU/compass samples and recieve pmw data.
+   Send I2S mic data.
  */
 
 #include "espressif/esp_common.h"
@@ -38,7 +38,7 @@ static void udp_task(void *pvParameters)
     int s = socket(AF_INET, SOCK_DGRAM, 0);
     if(s < 0) {
         printf("... Failed to allocate socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         return;
     }
 
@@ -57,14 +57,14 @@ static void udp_task(void *pvParameters)
     rtn = bind (s, (struct sockaddr *)&caddr, sizeof(caddr));
     if(rtn < 0) {
         printf("... Failed to bind socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
     rtn = connect(s, (struct sockaddr *) &saddr, sizeof(saddr));
     if (rtn < 0) {
         printf("... Failed to connect socket.\r\n");
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         close (s);
         return;
     }
@@ -96,12 +96,12 @@ void user_init(void)
     sdk_wifi_station_set_config(&config);
 
     // start udp task
-    xTaskCreate(udp_task, (int8_t *)"udp_task", 256, NULL, 3, NULL);
+    xTaskCreate(udp_task, "udp_task", 256, NULL, 3, NULL);
 
     while (sockfd < 0) {
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 
     // Create i2s task
-    xTaskCreate(i2s_task, (int8_t *)"i2s_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(i2s_task, "i2s_task", 512, (void*)sockfd, 2, NULL);
 }

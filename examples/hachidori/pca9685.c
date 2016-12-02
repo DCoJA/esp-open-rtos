@@ -64,8 +64,8 @@
 #error "unknown freq_hz"
 #endif
 
-extern xSemaphoreHandle i2c_sem;
-extern xSemaphoreHandle ringbuf_sem;
+extern SemaphoreHandle_t i2c_sem;
+extern SemaphoreHandle_t ringbuf_sem;
 
 extern struct ringbuf ubloxbuf;
 
@@ -126,7 +126,7 @@ static void pca9685_init(void)
     // prescale 67 for freq 99Hz
     pca9685_write(PCA9685_RA_PRE_SCALE, PCA9685_FREQ_PRESCALE);
     // Wait 1ms
-    vTaskDelay(1/portTICK_RATE_MS);
+    vTaskDelay(1/portTICK_PERIOD_MS);
     // Restart PCA9685, auto-increment enabled
     pca9685_write(PCA9685_RA_MODE1,
                   (PCA9685_MODE1_RESTART_BIT|PCA9685_MODE1_AI_BIT));
@@ -157,7 +157,7 @@ void pwm_task(void *pvParameters)
     pca9685_init();
 
     struct LRpacket pkt;
-    portTickType last_time = xTaskGetTickCount();
+    TickType_t last_time = xTaskGetTickCount();
     while (1) {
         // Wait udp packet
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
@@ -184,7 +184,7 @@ void pwm_task(void *pvParameters)
         }
 
         // skip output so as not to eat up cpu time with bit-bang
-        portTickType current_time = xTaskGetTickCount();
+        TickType_t current_time = xTaskGetTickCount();
         if ((uint32_t)(current_time - last_time) <= 4) {
             last_time = current_time;
             continue;
