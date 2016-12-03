@@ -16,7 +16,8 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
-#define CPPM_NUM_CHANNELS 16
+#define MAX_NUM_CHANNELS 16
+#define CPPM_NUM_CHANNELS 8
 
 #define FRAME 0x7f
 
@@ -29,7 +30,7 @@ static void lpc_write(uint8_t reg, uint8_t val)
 static struct pkt {
     uint8_t head;
     uint8_t tos;
-    uint8_t data[2*CPPM_NUM_CHANNELS];
+    uint8_t data[sizeof(uint16_t)*MAX_NUM_CHANNELS];
 } pkt;
 
 #define PKT_HEAD 0x15
@@ -52,7 +53,7 @@ void lpc_task(void *pvParameters)
         memset(&cli_addr, 0, clilen);
         int n = recvfrom((int)pvParameters, &pkt, sizeof(pkt), 0,
                          (struct sockaddr *) &cli_addr, &clilen);
-        //printf("recv %d bytes\n", n);
+        //printf("recv %d bytes pkt.head %02x\n", n, pkt.head);
         if (n < 0) {
         }
 
@@ -64,14 +65,14 @@ void lpc_task(void *pvParameters)
 
         // skip output so as not to too fast update of pwm
         TickType_t current_time = xTaskGetTickCount();
-        if ((uint32_t)(current_time - last_time) <= 10) {
+        if ((uint32_t)(current_time - last_time) <= 4) {
             last_time = current_time;
             continue;
         } else {
             last_time = current_time;
         }
 
-        for (int i = 0; i < 2*CPPM_NUM_CHANNELS; i++) {
+        for (int i = 0; i < sizeof(uint16_t)*CPPM_NUM_CHANNELS; i++) {
             lpc_write(i, pkt.data[i]);
         }
 

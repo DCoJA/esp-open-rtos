@@ -15,7 +15,8 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
-#define CPPM_NUM_CHANNELS 16
+#define MAX_NUM_CHANNELS 16
+#define CPPM_NUM_CHANNELS 8
 
 #define READY           0x7f
 #define CLEAR_READY     0x7e
@@ -35,7 +36,7 @@ extern SemaphoreHandle_t send_sem;
 static struct pkt {
     uint8_t head;
     uint8_t tos;
-    uint8_t data[2*CPPM_NUM_CHANNELS];
+    uint8_t data[sizeof(uint16_t)*MAX_NUM_CHANNELS];
 } pkt;
 
 void lpc_task(void *pvParameters)
@@ -54,7 +55,7 @@ void lpc_task(void *pvParameters)
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
         if (lpc_read(READY)) {
-            for (int i = 0; i < 2*CPPM_NUM_CHANNELS; i++) {
+            for (int i = 0; i < sizeof(uint16_t)*CPPM_NUM_CHANNELS; i++) {
                 pkt.data[i] = lpc_read(i);
             }
             lpc_read(CLEAR_READY);
