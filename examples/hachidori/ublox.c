@@ -288,7 +288,7 @@ void gps_task(void *pvParameters)
         pkt.data[0] = count;
         // Send it
         xSemaphoreTake(send_sem, portMAX_DELAY);
-        pkt.head = 0xD3;
+        pkt.head = LRHEADER;
         pkt.tos = TOS_GPS;
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {

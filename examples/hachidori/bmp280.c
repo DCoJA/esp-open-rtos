@@ -267,7 +267,7 @@ void baro_task(void *pvParameters)
         memcpy (&pkt.data[12], voltage.bytes, sizeof(voltage));
         // Send it
         xSemaphoreTake(send_sem, portMAX_DELAY);
-        pkt.head = 0xD3;
+        pkt.head = LRHEADER;
         pkt.tos = TOS_BARO;
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {

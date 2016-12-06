@@ -364,7 +364,7 @@ void imu_task(void *pvParameters)
         memcpy(&pkt.data[20], uz.bytes, sizeof(uz));
 
         xSemaphoreTake(send_sem, portMAX_DELAY);
-        pkt.head = 0xD3;
+        pkt.head = LRHEADER;
         pkt.tos = TOS_IMU;
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {
@@ -392,7 +392,7 @@ void imu_task(void *pvParameters)
             memcpy(&pkt.data[8], uz.bytes, sizeof(uz));
 
             xSemaphoreTake(send_sem, portMAX_DELAY);
-            pkt.head = 0xD3;
+            pkt.head = LRHEADER;
             pkt.tos = TOS_MAG;
             int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
             if (n < 0) {
