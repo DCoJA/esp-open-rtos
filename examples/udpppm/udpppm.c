@@ -16,7 +16,6 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
-#define MAX_NUM_CHANNELS 16
 #define CPPM_NUM_CHANNELS 8
 
 #define FRAME 0x7f
@@ -27,13 +26,18 @@ static void lpc_write(uint8_t reg, uint8_t val)
     spi_transfer_16 (1, in);
 }
 
-static struct pkt {
-    uint8_t head;
-    uint8_t tos;
-    uint8_t data[sizeof(uint16_t)*MAX_NUM_CHANNELS];
+// packet for Ardupilot RC UDP protocol
+#define RCINPUT_UDP_NUM_CHANNELS 8
+#define RCINPUT_UDP_VERSION 2
+
+static struct __attribute__((packed)) pkt {
+    uint32_t version;
+    uint64_t timestamp_us;
+    uint16_t sequence;
+    uint16_t pwms[RCINPUT_UDP_NUM_CHANNELS];
 } pkt;
 
-#define PKT_HEAD 0x15
+#define PWM_LIMIT 2200
 
 void lpc_task(void *pvParameters)
 {
@@ -53,17 +57,17 @@ void lpc_task(void *pvParameters)
         memset(&cli_addr, 0, clilen);
         int n = recvfrom((int)pvParameters, &pkt, sizeof(pkt), 0,
                          (struct sockaddr *) &cli_addr, &clilen);
-        //printf("recv %d bytes pkt.head %02x\n", n, pkt.head);
+        printf("recv %d bytes pkt.head %02x\n", n, pkt.version);
         if (n < 0) {
         }
 
-        if (pkt.head != PKT_HEAD) {
+        if (pkt.version != RCINPUT_UDP_VERSION) {
             continue;
         }
 
         // TODO check client address
 
-        // skip output so as not to too fast update of pwm
+        // Skip output so as not to too fast update of pwm
         TickType_t current_time = xTaskGetTickCount();
         if ((uint32_t)(current_time - last_time) <= 4) {
             last_time = current_time;
@@ -72,8 +76,25 @@ void lpc_task(void *pvParameters)
             last_time = current_time;
         }
 
-        for (int i = 0; i < sizeof(uint16_t)*CPPM_NUM_CHANNELS; i++) {
-            lpc_write(i, pkt.data[i]);
+        bool good_packet = true;
+        // TODO check timestamp and sequence number
+
+        // Check pwm values not so as to use bad value
+        for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
+            if (pkt.pwms[i] > PWM_LIMIT) {
+                good_packet = false;
+                break;
+            }
+        }
+
+        if (!good_packet) {
+            continue;
+        }
+
+        for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
+            uint16_t pwm = pkt.pwms[i];
+            lpc_write(2*i, (uint8_t)(pwm & 0xff));
+            lpc_write(2*i+1, (uint8_t)(pwm >> 8));
         }
 
         lpc_write(FRAME, 1);

@@ -15,9 +15,6 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
-#define MAX_NUM_CHANNELS 16
-#define CPPM_NUM_CHANNELS 8
-
 #define READY           0x7f
 #define CLEAR_READY     0x7e
 
@@ -33,16 +30,24 @@ static uint8_t lpc_read(uint8_t reg)
 
 extern SemaphoreHandle_t send_sem;
 
-static struct pkt {
-    uint8_t head;
-    uint8_t tos;
-    uint8_t data[sizeof(uint16_t)*MAX_NUM_CHANNELS];
+// packet for Ardupilot RC UDP protocol
+#define RCINPUT_UDP_NUM_CHANNELS 8
+#define RCINPUT_UDP_VERSION 2
+
+static struct __attribute__((packed)) pkt {
+    uint32_t version;
+    uint64_t timestamp_us;
+    uint16_t sequence;
+    uint16_t pwms[RCINPUT_UDP_NUM_CHANNELS];
 } pkt;
+
+#define PWM_LIMIT 2200
 
 void lpc_task(void *pvParameters)
 {
-    pkt.head = 0x15;
-    pkt.tos = 0;
+    pkt.version = RCINPUT_UDP_VERSION;
+    pkt.timestamp_us = 0;
+    pkt.sequence = 0;
 
     // Avoid to set SPI_CS(GPIO15) low early in the boot sequence
     vTaskDelay(1000/portTICK_PERIOD_MS);
@@ -55,18 +60,25 @@ void lpc_task(void *pvParameters)
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
         if (lpc_read(READY)) {
-            for (int i = 0; i < sizeof(uint16_t)*CPPM_NUM_CHANNELS; i++) {
-                pkt.data[i] = lpc_read(i);
+            for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
+                uint16_t pwm = lpc_read(2*i) + ((uint16_t)lpc_read(2*i+1) << 8);
+                if (pwm > PWM_LIMIT) {
+                    // don't send bad value
+                    lpc_read(CLEAR_READY);
+                    continue;
+                }
+                pkt.pwms[i] = pwm;
             }
             lpc_read(CLEAR_READY);
         } else {
             continue;
         }
-            
+        pkt.timestamp_us = ((uint64_t)1000) * xTaskGetTickCount();
         xSemaphoreTake(send_sem, portMAX_DELAY);
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {
         }
         xSemaphoreGive(send_sem);
+        pkt.sequence++;
     }
 }
