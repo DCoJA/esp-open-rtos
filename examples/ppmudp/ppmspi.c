@@ -20,12 +20,19 @@
 
 static uint8_t lpc_read(uint8_t reg)
 {
-    uint8_t in = (0x80 | reg);
-    (void)spi_transfer_8 (1, in);
-    // dummy read for lpc
-    (void)spi_transfer_8 (1, in);
-    uint8_t out = spi_transfer_8 (1, 0);
-    return out;
+    uint16_t in = (uint16_t)(0x80 | reg) << 8;
+    // dummy reads and wait for slave
+    (void)spi_transfer_16 (1, in);
+    (void)spi_transfer_16 (1, in);
+    uint16_t out = spi_transfer_16 (1, in);
+    return (uint8_t)out;
+
+}
+
+static void lpc_write(uint8_t reg, uint8_t val)
+{
+    uint16_t in = ((uint16_t)(reg) << 8) | val;
+    spi_transfer_16 (1, in);
 }
 
 extern SemaphoreHandle_t send_sem;
@@ -41,7 +48,8 @@ static struct __attribute__((packed)) pkt {
     uint16_t pwms[RCINPUT_UDP_NUM_CHANNELS];
 } pkt;
 
-#define PWM_LIMIT 2200
+#define PWM_WM_HIGH 2200
+#define PWM_WM_LOW   800
 
 void lpc_task(void *pvParameters)
 {
@@ -58,18 +66,19 @@ void lpc_task(void *pvParameters)
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
+    wait:
         vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
-        if (lpc_read(READY)) {
+        if (lpc_read(READY) == 1) {
             for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
                 uint16_t pwm = lpc_read(2*i) + ((uint16_t)lpc_read(2*i+1) << 8);
-                if (pwm > PWM_LIMIT) {
-                    // don't send bad value
-                    lpc_read(CLEAR_READY);
-                    continue;
+                if (pwm > PWM_WM_HIGH || pwm < PWM_WM_LOW) {
+                    // skip this round
+                    lpc_write(CLEAR_READY, 0);
+                    goto wait;
                 }
                 pkt.pwms[i] = pwm;
             }
-            lpc_read(CLEAR_READY);
+            lpc_write(CLEAR_READY, 0);
         } else {
             continue;
         }

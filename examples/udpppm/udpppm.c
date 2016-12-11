@@ -20,6 +20,19 @@
 
 #define FRAME 0x7f
 
+static uint8_t lpc_read(uint8_t reg) __attribute__((unused));
+
+static uint8_t lpc_read(uint8_t reg)
+{
+    uint16_t in = (uint16_t)(0x80 | reg) << 8;
+    // Dummy reads will return garbage
+    (void)spi_transfer_16 (1, in);
+    (void)spi_transfer_16 (1, in);
+    // Now slave is ready to send register value
+    uint16_t out = spi_transfer_16 (1, in);
+    return (uint8_t)out;
+}
+
 static void lpc_write(uint8_t reg, uint8_t val)
 {
     uint16_t in = ((uint16_t)(reg) << 8) | val;
@@ -37,7 +50,8 @@ static struct __attribute__((packed)) pkt {
     uint16_t pwms[RCINPUT_UDP_NUM_CHANNELS];
 } pkt;
 
-#define PWM_LIMIT 2200
+#define PWM_WM_HIGH 2200
+#define PWM_WM_LOW   800
 
 void lpc_task(void *pvParameters)
 {
@@ -57,7 +71,7 @@ void lpc_task(void *pvParameters)
         memset(&cli_addr, 0, clilen);
         int n = recvfrom((int)pvParameters, &pkt, sizeof(pkt), 0,
                          (struct sockaddr *) &cli_addr, &clilen);
-        printf("recv %d bytes pkt.head %02x\n", n, pkt.version);
+        //printf("recv %d bytes pkt.head %02x\n", n, pkt.version);
         if (n < 0) {
         }
 
@@ -81,7 +95,7 @@ void lpc_task(void *pvParameters)
 
         // Check pwm values not so as to use bad value
         for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
-            if (pkt.pwms[i] > PWM_LIMIT) {
+            if (pkt.pwms[i] > PWM_WM_HIGH || pkt.pwms[i] < PWM_WM_LOW) {
                 good_packet = false;
                 break;
             }
@@ -93,6 +107,7 @@ void lpc_task(void *pvParameters)
 
         for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
             uint16_t pwm = pkt.pwms[i];
+            //printf("ch %d: pwm %04d(us)\n", i, pwm);
             lpc_write(2*i, (uint8_t)(pwm & 0xff));
             lpc_write(2*i+1, (uint8_t)(pwm >> 8));
         }
