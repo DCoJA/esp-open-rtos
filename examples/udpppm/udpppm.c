@@ -60,7 +60,7 @@ void lpc_task(void *pvParameters)
 
     printf("Start lpc task\n");
 
-    if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
+    if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_20M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
     }
 

@@ -60,7 +60,7 @@ void lpc_task(void *pvParameters)
     // Avoid to set SPI_CS(GPIO15) low early in the boot sequence
     vTaskDelay(1000/portTICK_PERIOD_MS);
 
-    if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_1M, true, SPI_BIG_ENDIAN, false)) {
+    if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_20M, true, SPI_BIG_ENDIAN, false)) {
         printf("Failed spi_init\n");
     }
 
