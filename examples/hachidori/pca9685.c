@@ -138,6 +138,12 @@ static void pca9685_init(void)
 bool in_failsafe = false;
 uint32_t pwm_count = 0;
 float last_width[NUM_CHANNELS];
+static int chmap[NUM_MAPPED_CHANNELS] = CHANNEL_MAP;
+
+static inline int channel_map (int i)
+{
+    return (i < NUM_MAPPED_CHANNELS ? chmap[i] : i);
+}
 
 void pwm_output(uint16_t *wd, int nch)
 {
@@ -146,7 +152,7 @@ void pwm_output(uint16_t *wd, int nch)
         uint16_t width = wd[i];
         if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
             // write ch data to PCA9685
-            pca9685_out(i, width);
+            pca9685_out(channel_map (i), width);
         }
     }
     xSemaphoreGive(i2c_sem);
