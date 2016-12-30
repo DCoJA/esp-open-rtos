@@ -145,14 +145,38 @@ static inline int channel_map (int i)
     return (i < NUM_MAPPED_CHANNELS ? chmap[i] : i);
 }
 
+static inline int pwm_scale (uint16_t width)
+{
+    if (width <= LO_WIDTH) {
+        return 0;
+    }
+#if defined (USE_ESC)
+    if (length > HI_WIDTH) {
+        return HI_WIDTH;
+    }
+    return width;
+#else
+    // 2S case: Map [1000, 2000] to [0, 1250] and cut less than 100
+    int32_t length = width - 1000;
+    // 1.25 times
+    length += (length >> 2);
+    if (length > 1250) {
+        return 1250;
+    } else if (length < 100) {
+        return 0;
+    }
+    return (uint16_t)length;
+#endif
+}
+
 void pwm_output(uint16_t *wd, int nch)
 {
     xSemaphoreTake(i2c_sem, portMAX_DELAY);
     for (int i = 0; i < nch; i++) {
         uint16_t width = wd[i];
-        if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+        if (width >= MIN_WIDTH && width <= HI_WIDTH) {
             // write ch data to PCA9685
-            pca9685_out(channel_map (i), width);
+            pca9685_out(channel_map (i), pwm_scale (width));
         }
     }
     xSemaphoreGive(i2c_sem);
