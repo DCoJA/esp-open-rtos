@@ -16,6 +16,10 @@
 
 #include "lrpacket.h"
 
+#if defined (INA226_I2C)
+#include "ina226.h"
+#endif
+
 // BMP/BME280
 #define BMP280_ADDRESS		0x77
 
@@ -246,6 +250,11 @@ void baro_task(void *pvParameters)
 {
     bmp280_init();
 
+    bool power_monitor = false;
+#if defined (INA226_I2C)
+    power_monitor = ina226_init();
+#endif
+
     int count = 0;
     struct LRpacket pkt;
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -255,11 +264,24 @@ void baro_task(void *pvParameters)
 
         // Also send TOUT voltage
         union { float f; uint8_t bytes[sizeof(float)]; } voltage;
-
+#if defined (INA226_I2C)
+        union { float f; uint8_t bytes[sizeof(float)]; } vbus, curr;
+#endif
         if (count == 0) {
             // update every second. 1/19 ATT
             voltage.f = sdk_system_adc_read()/1024.0 * 19;
             // printf("voltage %f\n", voltage.f);
+
+            if (power_monitor) {
+#if defined (INA226_I2C)
+                uint16_t v, c;
+                ina226_read_sample (&c, &v);
+                vbus.f = (float)v * INA226_VBUS_COEFF;
+                curr.f = (float)c * INA226_CURR_COEFF;
+                memcpy (&pkt.data[16], vbus.bytes, sizeof(vbus));
+                memcpy (&pkt.data[20], curr.bytes, sizeof(curr));
+#endif
+            }
         }
         if (++count == 50) {
             count = 0;
