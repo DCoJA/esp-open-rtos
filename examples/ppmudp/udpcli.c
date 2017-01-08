@@ -74,6 +74,19 @@ static void udp_task(void *pvParameters)
     }
 }
 
+static void led_task(void *pvParameters)
+{
+    static const int led = 4;
+
+    gpio_enable(led, GPIO_OUTPUT);
+    while(1) {
+        gpio_write(led, 1);
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+        gpio_write(led, 0);
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+    }
+}
+
 SemaphoreHandle_t send_sem;
 
 void user_init(void)
@@ -108,6 +121,9 @@ void user_init(void)
     sdk_wifi_station_set_config(&config);
 
     vSemaphoreCreateBinary(send_sem);
+
+    // start led task
+    xTaskCreate(led_task, "led_task", 256, NULL, 4, NULL);
 
     // start udp task
     xTaskCreate(udp_task, "udp_task", 256, NULL, 3, NULL);
