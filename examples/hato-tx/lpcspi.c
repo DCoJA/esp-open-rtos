@@ -15,8 +15,13 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
+#include "ringbuf.h"
+
 #define READY           0x7f
 #define CLEAR_READY     0x7e
+#define RX_READY	0x7d
+#define RXREG           0x40
+#define TXREG           0x41
 
 static uint8_t lpc_read(uint8_t reg)
 {
@@ -36,6 +41,11 @@ static void lpc_write(uint8_t reg, uint8_t val)
 }
 
 extern SemaphoreHandle_t send_sem;
+extern SemaphoreHandle_t rbuf_sem;
+extern SemaphoreHandle_t sbuf_sem;
+
+extern struct ringbuf mavrbuf;
+extern struct ringbuf mavsbuf;
 
 // packet for Ardupilot RC UDP protocol
 #define RCINPUT_UDP_NUM_CHANNELS 8
@@ -79,15 +89,30 @@ void lpc_task(void *pvParameters)
                 pkt.pwms[i] = pwm;
             }
             lpc_write(CLEAR_READY, 0);
-        } else {
-            continue;
+            pkt.timestamp_us = ((uint64_t)1000) * xTaskGetTickCount();
+            xSemaphoreTake(send_sem, portMAX_DELAY);
+            int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
+            if (n < 0) {
+            }
+            xSemaphoreGive(send_sem);
+            pkt.sequence++;
         }
-        pkt.timestamp_us = ((uint64_t)1000) * xTaskGetTickCount();
-        xSemaphoreTake(send_sem, portMAX_DELAY);
-        int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
-        if (n < 0) {
+        if (lpc_read(RX_READY) > 0) {
+            int count = 0;
+            xSemaphoreTake(sbuf_sem, portMAX_DELAY);
+            do {
+                ringbuf_put(&mavsbuf, lpc_read(RXREG));
+                lpc_write(RXREG, 0); // Write any value to increment read pt
+                count++;
+            } while (lpc_read(RX_READY) > 0);
+            xSemaphoreGive(sbuf_sem);
+            //printf("count %d\n", count);
         }
-        xSemaphoreGive(send_sem);
-        pkt.sequence++;
+        xSemaphoreTake(rbuf_sem, portMAX_DELAY);
+        uint32_t size = ringbuf_size(&mavrbuf);
+        for (int i = 0; i < size; i++) {
+            lpc_write(TXREG, ringbuf_get(&mavrbuf));
+        }
+        xSemaphoreGive(rbuf_sem);
     }
 }

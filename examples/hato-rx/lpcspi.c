@@ -16,6 +16,8 @@
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 
+#include "ringbuf.h"
+
 #define CPPM_NUM_CHANNELS 8
 
 #define FRAME 0x7f
@@ -39,6 +41,8 @@ static void lpc_write(uint8_t reg, uint8_t val)
     spi_transfer_16 (1, in);
 }
 
+extern SemaphoreHandle_t lpc_sem;
+
 // packet for Ardupilot RC UDP protocol
 #define RCINPUT_UDP_NUM_CHANNELS 8
 #define RCINPUT_UDP_VERSION 2
@@ -53,17 +57,8 @@ static struct __attribute__((packed)) pkt {
 #define PWM_WM_HIGH 2200
 #define PWM_WM_LOW   800
 
-void lpc_task(void *pvParameters)
+void ppm_task(void *pvParameters)
 {
-    // Avoid to set SPI_CS(GPIO15) low early in the boot sequence
-    vTaskDelay(1000/portTICK_PERIOD_MS);
-
-    printf("Start lpc task\n");
-
-    if (!spi_init(1, SPI_MODE0, SPI_FREQ_DIV_20M, true, SPI_BIG_ENDIAN, false)) {
-        printf("Failed spi_init\n");
-    }
-
     TickType_t last_time = xTaskGetTickCount();
     while (1) {
         struct sockaddr_in cli_addr;
@@ -105,6 +100,7 @@ void lpc_task(void *pvParameters)
             continue;
         }
 
+        xSemaphoreTake(lpc_sem, portMAX_DELAY);
         for (int i = 0; i < RCINPUT_UDP_NUM_CHANNELS; i++) {
             uint16_t pwm = pkt.pwms[i];
             //printf("ch %d: pwm %04d(us)\n", i, pwm);
@@ -113,5 +109,41 @@ void lpc_task(void *pvParameters)
         }
 
         lpc_write(FRAME, 1);
+        xSemaphoreGive(lpc_sem);
+    }
+}
+
+extern SemaphoreHandle_t rbuf_sem;
+extern SemaphoreHandle_t sbuf_sem;
+
+extern struct ringbuf mavrbuf;
+extern struct ringbuf mavsbuf;
+
+#define RX_READY        0x7d
+#define RXREG           0x40
+#define TXREG           0x41
+
+void uart_task(void *pvParameters)
+{
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
+        xSemaphoreTake(lpc_sem, portMAX_DELAY);
+        if (lpc_read(RX_READY) > 0) {
+            xSemaphoreTake(sbuf_sem, portMAX_DELAY);
+            do {
+                ringbuf_put(&mavsbuf, lpc_read(RXREG));
+                lpc_write(RXREG, 0); // Write any value to increment read pt
+            } while (lpc_read(RX_READY) > 0);
+            xSemaphoreGive(sbuf_sem);
+        }
+        xSemaphoreTake(rbuf_sem, portMAX_DELAY);
+        uint32_t size = ringbuf_size(&mavrbuf);
+        for (int i = 0; i < size; i++) {
+            //printf("write TXREG\n");
+            lpc_write(TXREG, ringbuf_get(&mavrbuf));
+        }
+        xSemaphoreGive(rbuf_sem);
+        xSemaphoreGive(lpc_sem);
     }
 }
