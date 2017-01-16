@@ -63,8 +63,8 @@ bool ina226_init(void)
 
     // Default operation mode
     ina226_write(INA226_CONFIG, 0x4127);
-    // Set full scall
-    ina226_write(INA226_CALIB, 0x0a00);
+    // Set full scall to 6.4A
+    ina226_write(INA226_CALIB, 0x0500);
 
     xSemaphoreGive(i2c_sem);
     return true;
