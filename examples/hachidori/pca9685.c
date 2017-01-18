@@ -155,6 +155,17 @@ static inline int pwm_scale (uint16_t width)
         return HI_WIDTH;
     }
     return width;
+#elif defined (USE_1S_BATT)
+    // 1S case: Map [1000, 2000] to [0, 2000] and cut less than 100
+    int32_t length = width - 1000;
+    // 2 times
+    length += length;
+    if (length > 2000) {
+        return 2000;
+    } else if (length < 100) {
+        return 0;
+    }
+    return (uint16_t)length;
 #else
     // 2S case: Map [1000, 2000] to [0, 1250] and cut less than 100
     int32_t length = width - 1000;

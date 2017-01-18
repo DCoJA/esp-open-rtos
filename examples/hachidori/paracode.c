@@ -25,13 +25,17 @@
 
 #define PGAIN 0.9f
 #define DGAIN 32.00f
+#ifdef HACHIDORI_CORE
 #define GCOEFF 200.0f
+#else
+#define GCOEFF 1000.0f
+#endif
 #define FORGET 0.1f
 #define BCOUNT 10
 
 static float dp[4], dd[4];
 static float qp0 = 1.0f, qp1 = 0.0f, qp2 = 0.0f, qp3 = 0.0f;
-static float stick_last = 900.0f;
+static float stick_last = MIN_WIDTH;
 static float base_adjust[4];
 static float adjust[4];
 

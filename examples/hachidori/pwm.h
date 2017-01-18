@@ -2,7 +2,7 @@
 
 #define NUM_CHANNELS	8
 
-#define MIN_WIDTH 900
+#define MIN_WIDTH 800
 #define LO_WIDTH 1100
 #define HI_WIDTH 1900
 
