@@ -151,7 +151,7 @@ static inline int pwm_scale (uint16_t width)
         return 0;
     }
 #if defined (USE_ESC)
-    if (length > HI_WIDTH) {
+    if (width > HI_WIDTH) {
         return HI_WIDTH;
     }
     return width;
