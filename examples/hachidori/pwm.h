@@ -13,9 +13,18 @@
 #else
 # define CHANNEL_MAP { 2, 0, 3, 1 }
 #endif
+// Default is disarming when inversion is estimated
+#ifndef DISARM_ON_INVERSION
+#define DISARM_ON_INVERSION 1
+#endif
+#define INVERSION_WM 50
 
 extern bool in_failsafe;
+extern bool disarm;
 extern uint32_t pwm_count;
 extern float last_width[NUM_CHANNELS];
 
 extern void pwm_output(uint16_t *wd, int nch);
+extern void pwm_init(void);
+
+extern void fs_disarm(void);

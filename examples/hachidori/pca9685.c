@@ -136,6 +136,7 @@ static void pca9685_init(void)
 
 // pwm global
 bool in_failsafe = false;
+bool disarm = false;
 uint32_t pwm_count = 0;
 float last_width[NUM_CHANNELS];
 static int chmap[NUM_MAPPED_CHANNELS] = CHANNEL_MAP;
@@ -147,7 +148,7 @@ static inline int channel_map (int i)
 
 static inline int pwm_scale (uint16_t width)
 {
-    if (width <= LO_WIDTH) {
+    if (width < LO_WIDTH) {
         return 0;
     }
 #if defined (USE_ESC)
@@ -156,27 +157,30 @@ static inline int pwm_scale (uint16_t width)
     }
     return width;
 #elif defined (USE_1S_BATT)
-    // 1S case: Map [1000, 2000] to [0, 2500] and cut less than 200
-    int32_t length = width - 1000;
-    // 2.5 times
-    length += length + (length >> 1);
+    // 1S case: Map [1100, 1900] to [0, 2500] and cut less than 200
+    int32_t length = width - 1100;
+    // 2500/800 times
+    length = (length * 25) >> 3;
     if (length > 2500) {
         return 2500;
     } else if (length < 200) {
         return 0;
     }
     return (uint16_t)length;
-#else
-    // 2S case: Map [1000, 2000] to [0, 1250] and cut less than 100
-    int32_t length = width - 1000;
-    // 1.25 times
-    length += (length >> 2);
+#elif defined (USE_2S_BATT)
+    // 2S case: Map [1100, 1900] to [0, 1250] and cut less than 100
+    int32_t length = width - 1100;
+    // 1250/800 times
+    length = (length * 25) >> 4;
     if (length > 1250) {
         return 1250;
     } else if (length < 100) {
         return 0;
     }
     return (uint16_t)length;
+#else
+#error "No ESC or Battery specified"
+    return 0;
 #endif
 }
 
@@ -193,10 +197,33 @@ void pwm_output(uint16_t *wd, int nch)
     xSemaphoreGive(i2c_sem);
 }
 
-void pwm_task(void *pvParameters)
+void pwm_init(void)
 {
     pca9685_init();
 
+#ifdef USE_ESC
+    // wait 3 sec for esc start up
+    printf("wait 3 sec for esc start up\n");
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    xSemaphoreTake(i2c_sem, portMAX_DELAY);
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        // write minimal stick data to PCA9685
+        pca9685_out(i, LO_WIDTH + 2);
+    }
+    xSemaphoreGive(i2c_sem);
+    // wait 6 sec for normal esc/motor start up
+    printf("wait 6 sec for normal esc/motor start up\n");
+    vTaskDelay(6000 / portTICK_PERIOD_MS);
+    xSemaphoreTake(i2c_sem, portMAX_DELAY);
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        pca9685_out(i, 0);
+    }
+    xSemaphoreGive(i2c_sem);
+#endif
+}
+
+void pwm_task(void *pvParameters)
+{
     struct LRpacket pkt;
     TickType_t last_time = xTaskGetTickCount();
     while (1) {
@@ -220,7 +247,7 @@ void pwm_task(void *pvParameters)
         }
 
         pwm_count++;
-        if (in_failsafe) {
+        if (in_failsafe || disarm) {
             continue;
         }
 

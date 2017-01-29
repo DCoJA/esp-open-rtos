@@ -22,6 +22,7 @@
 #include "ssid_config.h"
 
 #include "udp_config.h"
+#include "pwm.h"
 
 #include "ringbuf.h"
 
@@ -112,6 +113,9 @@ void user_init(void)
     vSemaphoreCreateBinary(i2c_sem);
     vSemaphoreCreateBinary(send_sem);
     vSemaphoreCreateBinary(ringbuf_sem);
+
+    // Initialize pwm for normal start up for ESC
+    pwm_init();
 
     // Initialize ring buffer
     ringbuf_init (&ubloxbuf);

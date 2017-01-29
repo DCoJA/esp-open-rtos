@@ -71,6 +71,9 @@ void fs_task(void *pvParameters)
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
+        if (disarm) {
+            continue;
+        }
 #ifdef RESTART_AT_FAST_RECONNECT
         if (count < 4*100 && last_count != pwm_count) {
             goto restart;
@@ -99,8 +102,8 @@ void fs_task(void *pvParameters)
         float rup, hup, ydelta, d[NUM_MOTORS];
         // These are rough approximations which would be enough for
         // our purpose.
-        rup = q0*q1+q3*q2;
-        hup = q0*q2-q3*q1;
+        hup = -(q0*q1+q3*q2);
+        rup = q0*q2-q3*q1;
 
         // Estimate yaw change
         if (qp0 == 1.0f) {
@@ -148,6 +151,14 @@ void fs_task(void *pvParameters)
         }
 
         pwm_output(wd, NUM_MOTORS);
-
      }
+}
+
+void fs_disarm(void)
+{
+    uint16_t wd[NUM_MOTORS];
+    for (int i = 0; i < NUM_MOTORS; i++) {
+        wd[i] = LO_WIDTH;
+    }
+    pwm_output(wd, NUM_MOTORS);
 }

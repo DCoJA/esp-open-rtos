@@ -26,6 +26,8 @@
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
+#include "pwm.h"
+
 /* MPU9250 */
 #define MPU9250_ID	0x71
 
@@ -263,6 +265,10 @@ static void ak8963_start(void)
     // Start measurement
 }
 
+#if DISARM_ON_INVERSION
+static int maybe_inverted;
+#endif
+
 extern SemaphoreHandle_t send_sem;
 
 void imu_task(void *pvParameters)
@@ -402,6 +408,18 @@ void imu_task(void *pvParameters)
             beta = (count < 1000) ? 2.0f : 0.2f;
             MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
             KFACCupdate(ax, ay, az);
+#if DISARM_ON_INVERSION
+            if (az < -GRAVITY_MSS * 0.6
+                && (accz > - 0.5 && accz < 0.5)) {
+                if(++maybe_inverted > INVERSION_WM) {
+                    disarm = true;
+                    fs_disarm();
+                    continue;
+                }
+            } else {
+                maybe_inverted = 0;
+            }
+#endif
         }
     }
 }
