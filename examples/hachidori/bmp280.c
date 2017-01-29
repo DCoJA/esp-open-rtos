@@ -43,8 +43,9 @@
 #define BME280_HUM_SIZE		(0xff-0xfd)
 #define BME280_REG_CTRLHUM	0xf2
 
-// oversampling 3 gives 14ms conversion time
-#define OVERSAMPLING 3
+// 5 gives 16 times oversampling
+#define OVERSAMPLING 5
+#define FILTER_COEFFICIENT 2
 
 // BMP280 dig data are little endian
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2*idx+1] << 8) | v[2*idx]))
@@ -115,10 +116,10 @@ static void bmp280_init(void)
         // See datasheet 5.4.3 and 5.4.4.
         bmp280_write(BME280_REG_CTRLHUM, 1);
     }
-    // osrs_t = 1, osrs_p = OVERSAMPLING, mode = 3(cyclic)
-    bmp280_write(BMP280_REG_CTRL, (1 << 5) | (OVERSAMPLING << 2) | 3);
-    // t_sb = 0, filter = 5
-    bmp280_write(BMP280_REG_CONFIG, (0 << 5) | (4 << 2));
+    // osrs_t = 2, osrs_p = OVERSAMPLING, mode = 3(cyclic)
+    bmp280_write(BMP280_REG_CTRL, (2 << 5) | (OVERSAMPLING << 2) | 3);
+    // t_sb = 0, filter = 2
+    bmp280_write(BMP280_REG_CONFIG, (0 << 5) | (FILTER_COEFFICIENT << 2));
 
     // Read calibration data
     bmp280_readn(BMP280_REG_CALIB0, bmp280_calib_buff, BMP280_CALIB_SIZE);
