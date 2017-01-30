@@ -25,11 +25,7 @@
 
 #define PGAIN 0.9f
 #define DGAIN 32.00f
-#ifdef HACHIDORI_CORE
 #define GCOEFF 200.0f
-#else
-#define GCOEFF 1000.0f
-#endif
 #define FORGET 0.1f
 #define BCOUNT 10
 
@@ -48,7 +44,7 @@ void fs_task(void *pvParameters)
     uint32_t last_count = pwm_count;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_PERIOD_MS);
+        vTaskDelayUntil(&xLastWakeTime, 1000/portTICK_PERIOD_MS);
         if (pwm_count) {
             if (last_count == pwm_count) {
                 break;
