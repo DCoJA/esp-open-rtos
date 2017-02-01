@@ -136,7 +136,7 @@ static void pca9685_init(void)
 
 // pwm global
 bool in_failsafe = false;
-bool disarm = false;
+bool in_arm = false;
 uint32_t pwm_count = 0;
 float last_width[NUM_CHANNELS];
 static int chmap[NUM_MAPPED_CHANNELS] = CHANNEL_MAP;
@@ -246,8 +246,18 @@ void pwm_task(void *pvParameters)
             continue;
         }
 
+        if (!in_arm) {
+            // Set in_arm when we get the first pwm packet.
+            if (pwm_count == 0) {
+                in_arm = true;
+            } else {
+                printf("failsafe disarming\n");
+                fs_disarm();
+                vTaskSuspend(NULL);
+            }
+        }
         pwm_count++;
-        if (in_failsafe || disarm) {
+        if (in_failsafe) {
             continue;
         }
 

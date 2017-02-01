@@ -409,12 +409,11 @@ void imu_task(void *pvParameters)
             MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
             KFACCupdate(ax, ay, az);
 #if DISARM_ON_INVERSION
-            if (az < -GRAVITY_MSS * 0.6
-                && (accz > - 0.5 && accz < 0.5)) {
+            if (az < -GRAVITY_MSS * 0.6) {
                 if(++maybe_inverted > INVERSION_WM) {
-                    disarm = true;
-                    fs_disarm();
-                    continue;
+                    if (in_arm) {
+                        in_arm = false;
+                    }
                 }
             } else {
                 maybe_inverted = 0;

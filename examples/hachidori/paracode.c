@@ -67,7 +67,7 @@ void fs_task(void *pvParameters)
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
-        if (disarm) {
+        if (!in_arm) {
             continue;
         }
 #ifdef RESTART_AT_FAST_RECONNECT
@@ -79,11 +79,14 @@ void fs_task(void *pvParameters)
 
         float stick;
         // Try to avoid free fall.
-        if (accz < -GEPSILON) {
+        if (accz < GEPSILON) {
             stick = stick_last;
         } else {
             // Decrease pwm exponentially to MIN_WIDTH
             stick = (1-DRATE)*stick_last + DRATE*MIN_WIDTH;
+            if (stick < LO_WIDTH) {
+                stick = LO_WIDTH;
+            }
             stick_last = stick;
         }
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
