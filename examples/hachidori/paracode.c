@@ -44,7 +44,7 @@ void fs_task(void *pvParameters)
     uint32_t last_count = pwm_count;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 1000/portTICK_PERIOD_MS);
+        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_PERIOD_MS);
         if (pwm_count) {
             if (last_count == pwm_count) {
                 break;

@@ -251,13 +251,11 @@ void pwm_task(void *pvParameters)
             if (pwm_count == 0) {
                 in_arm = true;
             } else {
-                printf("failsafe disarming\n");
                 fs_disarm();
-                vTaskSuspend(NULL);
             }
         }
         pwm_count++;
-        if (in_failsafe) {
+        if (in_failsafe || !in_arm) {
             continue;
         }
 
