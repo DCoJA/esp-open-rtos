@@ -11,9 +11,21 @@
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
+#define NUM_MOTORS 4
+
+// Disarm immediately
+
+void fs_disarm(void)
+{
+    uint16_t wd[NUM_MOTORS];
+    for (int i = 0; i < NUM_MOTORS; i++) {
+        wd[i] = LO_WIDTH;
+    }
+    pwm_output(wd, NUM_MOTORS);
+}
+
 // parachute code for failsafe
 
-#define NUM_MOTORS 4
 // (1-DRATE)^100 = 0.5
 #define DRATE (1.0f - 0.9965403f)
 #define GEPSILON 0.1f
@@ -68,6 +80,7 @@ void fs_task(void *pvParameters)
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
         if (!in_arm) {
+            fs_disarm();
             continue;
         }
 #ifdef RESTART_AT_FAST_RECONNECT
@@ -78,17 +91,13 @@ void fs_task(void *pvParameters)
         count++;
 
         float stick;
-        // Try to avoid free fall.
-        if (accz < GEPSILON) {
-            stick = stick_last;
-        } else {
-            // Decrease pwm exponentially to MIN_WIDTH
-            stick = (1-DRATE)*stick_last + DRATE*MIN_WIDTH;
-            if (stick < LO_WIDTH) {
-                stick = LO_WIDTH;
-            }
-            stick_last = stick;
+        // Decrease pwm exponentially to MIN_WIDTH
+        stick = (1-DRATE)*stick_last + DRATE*MIN_WIDTH;
+        if (stick < LO_WIDTH) {
+            stick = LO_WIDTH;
         }
+        stick_last = stick;
+
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
            which estimate current roll and pitch.  Adjustment value
            of each motor is determined by simple mix of these values
@@ -151,13 +160,4 @@ void fs_task(void *pvParameters)
 
         pwm_output(wd, NUM_MOTORS);
      }
-}
-
-void fs_disarm(void)
-{
-    uint16_t wd[NUM_MOTORS];
-    for (int i = 0; i < NUM_MOTORS; i++) {
-        wd[i] = LO_WIDTH;
-    }
-    pwm_output(wd, NUM_MOTORS);
 }
