@@ -50,7 +50,12 @@
 #define PCA9685_MODE2_OUTNE1_BIT   (1 << 1)
 #define PCA9685_MODE2_OUTNE0_BIT   (1 << 0)
 
+#if defined (USE_ESC)
 #define PWM_FREQ_HZ 400
+#else
+// Maximal freq of PCA9685
+#define PWM_FREQ_HZ 1526
+#endif
 
 #if (PWM_FREQ_HZ == 400)
 #define PCA9685_FREQ_PRESCALE	15
@@ -60,6 +65,8 @@
 #define PCA9685_FREQ_PRESCALE	63
 #elif (PWM_FREQ_HZ == 50)
 #define PCA9685_FREQ_PRESCALE	127
+#elif (PWM_FREQ_HZ == 1526)
+#define PCA9685_FREQ_PRESCALE	3
 #else
 #error "unknown freq_hz"
 #endif
@@ -84,23 +91,30 @@ static void pca9685_write_led_on(uint8_t reg, uint16_t val)
 static void pca9685_out(int ch, uint16_t width)
 {
     uint32_t length = 0;
+#if defined (USE_ESC)
+    // absolute pulse width
     // length = round((width * 4096)/(1000000.f/(freq_hz*(1+epsilon)) - 1
-#if (PWM_FREQ_HZ == 400)
+# if (PWM_FREQ_HZ == 400)
     // approx 1.6402 with 6718/4096
     length = ((width * 6718) >> 12) - 1;
-#elif (PWM_FREQ_HZ == 200)
+# elif (PWM_FREQ_HZ == 200)
     // approx 0.8201 with 3359/4096
     length = ((width * 3359) >> 12) - 1;
-#elif (PWM_FREQ_HZ == 100)
+# elif (PWM_FREQ_HZ == 100)
     // approx 0.4099 with 1679/4096
     length = ((width * 1679) >> 12) - 1;
-#elif (PWM_FREQ_HZ == 50)
+# elif (PWM_FREQ_HZ == 50)
     // approx 0.2063 with 845/4096
     length = ((width * 845) >> 12) - 1;
+# else
+# error "unknown freq_hz"
+# endif
 #else
-#error "unknown freq_hz"
+    // 2500: 100% duty 0: 0% duty
+    // length = round((width * 4096)/2500)) - 1;
+    //  approx 1.6384 with 6711/4096
+    length = ((width * 6711) >> 12) - 1;
 #endif
-
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 0, 0);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 1, 0);
     // pca9685_write(PCA9685_RA_LED0_ON_L + 4*ch + 2, length & 0xff);
@@ -162,9 +176,9 @@ static inline int pwm_scale (uint16_t width)
     // 2500/800 times
     length = (length * 25) >> 3;
     if (length > 2500) {
-        return 2500;
+        length = 2500;
     } else if (length < 200) {
-        return 0;
+        length = 0;
     }
     return (uint16_t)length;
 #elif defined (USE_2S_BATT)
@@ -173,9 +187,9 @@ static inline int pwm_scale (uint16_t width)
     // 1250/800 times
     length = (length * 25) >> 4;
     if (length > 1250) {
-        return 1250;
+        length = 1250;
     } else if (length < 100) {
-        return 0;
+        length = 0;
     }
     return (uint16_t)length;
 #else
