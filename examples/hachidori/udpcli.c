@@ -23,6 +23,7 @@
 
 #include "udp_config.h"
 #include "pwm.h"
+#include "battery.h"
 
 #include "ringbuf.h"
 
@@ -30,6 +31,7 @@ extern void imu_task(void *pvParameters);
 extern void pwm_task(void *pvParameters);
 extern void baro_task(void *pvParameters);
 extern void gps_task(void *pvParameters);
+extern void bat_task(void *pvParameters);
 extern void fs_task(void *pvParameters);
 
 static int sockfd = -1;
@@ -76,9 +78,15 @@ static void udp_task(void *pvParameters)
         return;
     }
 
+    sockfd = s;
     while (1) {
-        sockfd = s;
-        vTaskSuspend(NULL);
+        // check every 4 sec
+        vTaskDelay(4000 / portTICK_PERIOD_MS);
+        if (low_battery) {
+            pwm_shutdown();
+            printf("low_battery: try to sleep\n");
+            sdk_system_deep_sleep(4000*1000*1000UL);
+        }
     }
 }
 
@@ -132,5 +140,6 @@ void user_init(void)
     xTaskCreate(pwm_task, "pwm_task", 256, (void*)sockfd, 4, NULL);
     xTaskCreate(baro_task, "baro_task", 512, (void*)sockfd, 3, NULL);
     xTaskCreate(gps_task, "gps_task", 512, (void*)sockfd, 2, NULL);
+    xTaskCreate(bat_task, "bat_task", 256, (void*)sockfd, 2, NULL);
     xTaskCreate(fs_task, "fs_task", 512, (void*)sockfd, 2, NULL);
 }

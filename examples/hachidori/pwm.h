@@ -26,5 +26,6 @@ extern float last_width[NUM_CHANNELS];
 
 extern void pwm_output(uint16_t *wd, int nch);
 extern void pwm_init(void);
+extern void pwm_shutdown(void);
 
 extern void fs_disarm(void);

@@ -14,11 +14,12 @@
 
 #include "i2c/i2c.h"
 
-#include "lrpacket.h"
+#include "b3packet.h"
 
 #include "ringbuf.h"
 
 #include "pwm.h"
+#include "battery.h"
 
 // PCA9685
 #define PCA9685_ADDRESS            0x40
@@ -211,6 +212,30 @@ void pwm_output(uint16_t *wd, int nch)
     xSemaphoreGive(i2c_sem);
 }
 
+#define RED_CHANNEL	13
+#define GREEN_CHANNEL	14
+#define BLUE_CHANNEL	15
+
+static void led_output(uint16_t red, uint16_t green, uint16_t blue)
+{
+    // Assume that server uses 0 as low and 5000 as full values
+    if (red > 5000) {
+        red = 5000;
+    }
+    if (green > 5000) {
+        green = 5000;
+    }
+    if (blue > 5000) {
+        blue = 5000;
+    }
+    // Map range of led value [0, 5000] to [2500, 0] for inverted leds
+    xSemaphoreTake(i2c_sem, portMAX_DELAY);
+    pca9685_out(RED_CHANNEL, (5000 - red) >> 1);
+    pca9685_out(GREEN_CHANNEL, (5000 - green) >> 1);
+    pca9685_out(BLUE_CHANNEL, (5000 - blue) >> 1);
+    xSemaphoreGive(i2c_sem);
+}
+
 void pwm_init(void)
 {
     pca9685_init();
@@ -236,15 +261,32 @@ void pwm_init(void)
 #endif
 }
 
+void pwm_shutdown(void)
+{
+    xSemaphoreTake(i2c_sem, portMAX_DELAY);
+    // Shutdown before sleeping
+    pca9685_write(PCA9685_RA_ALL_LED_OFF_H, PCA9685_ALL_LED_OFF_H_SHUT);
+    // Put PCA9685 to sleep
+    pca9685_write(PCA9685_RA_MODE1, PCA9685_MODE1_SLEEP_BIT);
+    xSemaphoreGive(i2c_sem);
+}
+
+#define ube16_val(v, idx) (((uint16_t)v[2*idx] << 8) | v[2*idx+1])
+
 void pwm_task(void *pvParameters)
 {
-    struct LRpacket pkt;
+    struct B3packet pkt;
     TickType_t last_time = xTaskGetTickCount();
     while (1) {
         // Wait udp packet
         int n = recv((int)pvParameters, &pkt, sizeof(pkt), 0);
-        if (n != sizeof(pkt) || pkt.head != LRHEADER)
+        if (n != sizeof(pkt) || pkt.head != B3HEADER)
             continue;
+
+        if (low_battery) {
+            printf("low_battery: stop pwm_task\n");
+            vTaskSuspend(NULL);
+        }
 
         if (pkt.tos == TOS_GPSCMD) {
             size_t len = pkt.data[0];
@@ -258,6 +300,12 @@ void pwm_task(void *pvParameters)
             continue;
         } else if (pkt.tos != TOS_PWM) {
             continue;
+        }
+
+        if ((pwm_count % 16) == 0) {
+            led_output(ube16_val(pkt.data, RED_CHANNEL),
+                       ube16_val(pkt.data, GREEN_CHANNEL),
+                       ube16_val(pkt.data, BLUE_CHANNEL));
         }
 
         if (!in_arm) {
@@ -284,7 +332,7 @@ void pwm_task(void *pvParameters)
 
         uint16_t wd[NUM_CHANNELS];
         for (int i = 0; i < NUM_CHANNELS; i++) {
-            uint16_t width = ((uint16_t)pkt.data[2*i] << 8)|pkt.data[2*i+1];
+            uint16_t width = ube16_val(pkt.data, i);
             wd[i] = width;
             last_width[i] = (float)width;
         }

@@ -9,8 +9,14 @@
 #include "task.h"
 #include <semphr.h>
 
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+
 #include "i2c/i2c.h"
 
+#include "b3packet.h"
+
+#include "battery.h"
 #include "ina226.h"
 
 // INA226
@@ -28,8 +34,8 @@
 #define INA226_DIE_ID		0x2260
 
 extern SemaphoreHandle_t i2c_sem;
+extern SemaphoreHandle_t send_sem;
 
-#ifdef INA226_I2C
 static uint16_t ina226_read(uint8_t reg)
 {
     uint8_t d[2];
@@ -83,4 +89,52 @@ bool ina226_read_sample(uint16_t *curr, uint16_t *vbus)
 
     return true;
 }
+
+bool low_battery = false;
+
+void bat_task(void *pvParameters)
+{
+    bool power_monitor = ina226_init();
+
+    if (!power_monitor) {
+        printf ("no working INA226 I2C\n");
+        vTaskSuspend(NULL);
+    }
+
+    struct B3packet pkt;
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, 100/portTICK_PERIOD_MS);
+
+        union { float f; uint8_t bytes[sizeof(float)]; } voltage;
+#if defined (USE_ESP_TOUT)
+        // Also send TOUT voltage
+        voltage.f = sdk_system_adc_read()/1024.0 * 19;
+        // printf("voltage %f\n", voltage.f);
+#else
+        voltage.f = 0.0f;
 #endif
+        memcpy (&pkt.data[12], voltage.bytes, sizeof(voltage));
+
+        union { float f; uint8_t bytes[sizeof(float)]; } vbus, curr;
+        uint16_t v, c;
+        ina226_read_sample (&c, &v);
+        vbus.f = (float)v * INA226_VBUS_COEFF;
+        curr.f = (float)c * INA226_CURR_COEFF;
+        memcpy (&pkt.data[0], vbus.bytes, sizeof(vbus));
+        memcpy (&pkt.data[4], curr.bytes, sizeof(curr));
+        if (vbus.f < LOW_BATTERY_WM) {
+            low_battery = true;
+        }
+
+        // Send it
+        xSemaphoreTake(send_sem, portMAX_DELAY);
+        pkt.head = B3HEADER;
+        pkt.tos = TOS_BAT;
+        int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
+        if (n < 0) {
+        }
+        xSemaphoreGive(send_sem);
+    }
+}
+

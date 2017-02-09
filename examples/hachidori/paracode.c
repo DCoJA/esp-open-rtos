@@ -8,6 +8,7 @@
 #include "task.h"
 
 #include "pwm.h"
+#include "battery.h"
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
@@ -79,6 +80,10 @@ void fs_task(void *pvParameters)
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, 10/portTICK_PERIOD_MS);
+        if (low_battery) {
+            fs_disarm();
+            vTaskSuspend(NULL);
+        }
         if (!in_arm) {
             fs_disarm();
             continue;

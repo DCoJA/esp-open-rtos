@@ -16,7 +16,7 @@
 #include "i2c/i2c.h"
 #endif
 
-#include "lrpacket.h"
+#include "b3packet.h"
 
 #include "ringbuf.h"
 
@@ -216,7 +216,7 @@ static uint8_t cmdbuf[32];
 
 void gps_task(void *pvParameters)
 {
-    struct LRpacket pkt;
+    struct B3packet pkt;
     int count = 0;
 #ifdef UBLOX_I2C
     uint8_t block[2];
@@ -288,7 +288,7 @@ void gps_task(void *pvParameters)
         pkt.data[0] = count;
         // Send it
         xSemaphoreTake(send_sem, portMAX_DELAY);
-        pkt.head = LRHEADER;
+        pkt.head = B3HEADER;
         pkt.tos = TOS_GPS;
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {

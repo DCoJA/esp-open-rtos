@@ -21,12 +21,13 @@
 
 #include "i2c/i2c.h"
 
-#include "lrpacket.h"
+#include "b3packet.h"
 
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
 #include "pwm.h"
+#include "battery.h"
 
 /* MPU9250 */
 #define MPU9250_ID	0x71
@@ -341,7 +342,7 @@ void imu_task(void *pvParameters)
 
     struct sample rx;
     struct ak_sample akrx;
-    struct LRpacket pkt;
+    struct B3packet pkt;
     int count = 0;
     float gx, gy, gz, ax, ay, az, mx, my, mz;
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -349,6 +350,13 @@ void imu_task(void *pvParameters)
         vTaskDelayUntil(&xLastWakeTime, 1/portTICK_PERIOD_MS);
         if (!mpu9250_ready())
             continue;
+
+        if (low_battery) {
+            // Sleep
+            mpu9250_write(PWR_MGMT_1, 0x40);
+            printf("low_battery: stop imu_task\n");
+            vTaskSuspend(NULL);
+        }
 
         mpu9250_read_sample(&rx);
 
@@ -370,7 +378,7 @@ void imu_task(void *pvParameters)
         memcpy(&pkt.data[20], uz.bytes, sizeof(uz));
 
         xSemaphoreTake(send_sem, portMAX_DELAY);
-        pkt.head = LRHEADER;
+        pkt.head = B3HEADER;
         pkt.tos = TOS_IMU;
         int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
         if (n < 0) {
@@ -398,7 +406,7 @@ void imu_task(void *pvParameters)
             memcpy(&pkt.data[8], uz.bytes, sizeof(uz));
 
             xSemaphoreTake(send_sem, portMAX_DELAY);
-            pkt.head = LRHEADER;
+            pkt.head = B3HEADER;
             pkt.tos = TOS_MAG;
             int n = send((int)pvParameters, &pkt, sizeof(pkt), 0);
             if (n < 0) {
