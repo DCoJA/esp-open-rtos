@@ -269,6 +269,7 @@ static void ak8963_start(void)
 #if DISARM_ON_INVERSION
 static int maybe_inverted;
 #endif
+bool maybe_landed = true;
 
 extern SemaphoreHandle_t send_sem;
 
@@ -427,6 +428,16 @@ void imu_task(void *pvParameters)
                 maybe_inverted = 0;
             }
 #endif
+            if ((ax < 0.8 && ax > -0.8)
+                && (ay < 0.8 && ay > -0.8)
+                && (az < GRAVITY_MSS + 0.6 && az > GRAVITY_MSS - 0.6)
+                && (gx < 0.05 && gx > -0.05)
+                && (gy < 0.05 && gy > -0.05)
+                && (gz < 0.05 && gz > -0.05)) {
+                maybe_landed = true;
+            } else {
+                maybe_landed = false;
+            }
         }
     }
 }

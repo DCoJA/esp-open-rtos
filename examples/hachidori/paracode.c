@@ -12,6 +12,14 @@
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
+// Restart at maybe landed
+#ifndef RESTART_AT_MAYBE_LANDED
+#define RESTART_AT_MAYBE_LANDED 1
+#endif
+#ifndef RESTART_AT_FAST_RECONNECT
+#define RESTART_AT_FAST_RECONNECT 1
+#endif
+
 #define NUM_MOTORS 4
 
 // Disarm immediately
@@ -48,9 +56,11 @@ static float stick_last = MIN_WIDTH;
 static float base_adjust[4];
 static float adjust[4];
 
+extern bool maybe_landed;
+
 void fs_task(void *pvParameters)
 {
-#ifdef RESTART_AT_FAST_RECONNECT
+#if (RESTART_AT_FAST_RECONNECT || RESTART_AT_MAYBE_LANDED)
  restart:
 #endif
     in_failsafe = false;
@@ -68,8 +78,10 @@ void fs_task(void *pvParameters)
 
     // Start failsafe
     in_failsafe = true;
-    uint32_t count;
-    count = 0;
+    uint32_t count = 0;
+#if RESTART_AT_MAYBE_LANDED
+    uint32_t landed = 0;
+#endif
 
     // Take the mean value of last widths as the virtual throttle
     uint16_t sum = 0;
@@ -88,8 +100,20 @@ void fs_task(void *pvParameters)
             fs_disarm();
             continue;
         }
-#ifdef RESTART_AT_FAST_RECONNECT
+#if RESTART_AT_MAYBE_LANDED
+        if (maybe_landed && stick_last == LO_WIDTH) {
+            landed++;
+        } else {
+            landed = 0;
+        }
+        if (landed > 4*100) {
+            printf("restart with maybe landed\n");
+            goto restart;
+        }
+#endif
+#if RESTART_AT_FAST_RECONNECT
         if (count < 4*100 && last_count != pwm_count) {
+            printf("restart with fast reconnect\n");
             goto restart;
         }
 #endif
