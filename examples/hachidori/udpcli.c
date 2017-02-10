@@ -79,15 +79,7 @@ static void udp_task(void *pvParameters)
     }
 
     sockfd = s;
-    while (1) {
-        // check every 4 sec
-        vTaskDelay(4000 / portTICK_PERIOD_MS);
-        if (low_battery) {
-            pwm_shutdown();
-            printf("low_battery: try to sleep\n");
-            sdk_system_deep_sleep(4000*1000*1000UL);
-        }
-    }
+    vTaskSuspend(NULL);
 }
 
 SemaphoreHandle_t i2c_sem;

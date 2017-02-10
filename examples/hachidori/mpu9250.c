@@ -345,6 +345,7 @@ void imu_task(void *pvParameters)
     struct ak_sample akrx;
     struct B3packet pkt;
     int count = 0;
+    int fscount = 0;
     float gx, gy, gz, ax, ay, az, mx, my, mz;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
@@ -414,9 +415,13 @@ void imu_task(void *pvParameters)
             }
             xSemaphoreGive(send_sem);
 
-            beta = (count < 1000) ? 2.0f : 0.2f;
-            MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
-            KFACCupdate(ax, ay, az);
+            if (prepare_failsafe) {
+                beta = (fscount++ < 1000) ? 2.0f : 0.2f;
+                MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
+                KFACCupdate(ax, ay, az);
+            } else {
+                fscount = 0;
+            }
 #if DISARM_ON_INVERSION
             if (az < -GRAVITY_MSS * 0.6) {
                 if(++maybe_inverted > INVERSION_WM) {

@@ -17,6 +17,7 @@
 #include "b3packet.h"
 
 #include "battery.h"
+#include "pwm.h"
 #include "ina226.h"
 
 // INA226
@@ -62,7 +63,6 @@ bool ina226_init(void)
     // Try to read Die ID
     uint16_t id = ina226_read(INA226_DID);
     if (id != 0x2260) {
-        printf ("no working INA226 on I2C\n");
         xSemaphoreGive(i2c_sem);
         return false;
     }
@@ -104,7 +104,7 @@ void bat_task(void *pvParameters)
     struct B3packet pkt;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 100/portTICK_PERIOD_MS);
+        vTaskDelayUntil(&xLastWakeTime, 200/portTICK_PERIOD_MS);
 
         union { float f; uint8_t bytes[sizeof(float)]; } voltage;
 #if defined (USE_ESP_TOUT)
@@ -125,6 +125,10 @@ void bat_task(void *pvParameters)
         memcpy (&pkt.data[4], curr.bytes, sizeof(curr));
         if (vbus.f < LOW_BATTERY_WM) {
             low_battery = true;
+            vTaskDelay(4000 / portTICK_PERIOD_MS);
+            pwm_shutdown();
+            printf("low_battery: try to sleep\n");
+            sdk_system_deep_sleep(4000*1000*1000UL);
         }
 
         // Send it

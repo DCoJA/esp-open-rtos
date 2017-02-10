@@ -12,7 +12,6 @@
 #include "MadgwickAHRS.h"
 #include "kfacc.h"
 
-// Restart at maybe landed
 #ifndef RESTART_AT_MAYBE_LANDED
 #define RESTART_AT_MAYBE_LANDED 1
 #endif
@@ -57,6 +56,7 @@ static float base_adjust[4];
 static float adjust[4];
 
 extern bool maybe_landed;
+bool prepare_failsafe;
 
 void fs_task(void *pvParameters)
 {
@@ -65,12 +65,20 @@ void fs_task(void *pvParameters)
 #endif
     in_failsafe = false;
     uint32_t last_count = pwm_count;
+    int nopwm_count = 0;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, 2000/portTICK_PERIOD_MS);
+        vTaskDelayUntil(&xLastWakeTime, 100/portTICK_PERIOD_MS);
         if (pwm_count) {
             if (last_count == pwm_count) {
-                break;
+                prepare_failsafe = true;
+                // start paracode if no pwm for 2 sec.
+                if (++nopwm_count > 20) {
+                    break;
+                }
+            } else {
+                prepare_failsafe = false;
+                nopwm_count = 0;
             }
             last_count = pwm_count;
         }
@@ -106,7 +114,7 @@ void fs_task(void *pvParameters)
         } else {
             landed = 0;
         }
-        if (landed > 4*100) {
+        if (landed > 4*100 && last_count != pwm_count) {
             printf("restart with maybe landed\n");
             goto restart;
         }
@@ -126,6 +134,14 @@ void fs_task(void *pvParameters)
             stick = LO_WIDTH;
         }
         stick_last = stick;
+
+        // Don't spin if already stopped
+        if (stick < LO_WIDTH + 0.5f) {
+            if (count == 1) {
+                fs_disarm();
+            }
+            continue;
+        }
 
         /* Try to keep horizontal attitude.  Rough AHRS gives the values
            which estimate current roll and pitch.  Adjustment value

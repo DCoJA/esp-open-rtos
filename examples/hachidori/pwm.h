@@ -19,6 +19,7 @@
 #endif
 #define INVERSION_WM 50
 
+extern bool prepare_failsafe;
 extern bool in_failsafe;
 extern bool in_arm;
 extern uint32_t pwm_count;
