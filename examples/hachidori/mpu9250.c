@@ -164,6 +164,11 @@ static void mpu9250_start(void)
     val |= 0x30;
     mpu9250_write(INT_PIN_CFG, val);
     vTaskDelay(1/portTICK_PERIOD_MS);
+
+    // Enable DMP
+    val = mpu9250_read(USER_CTRL);
+    mpu9250_write(USER_CTRL, val | (1<<7));
+    vTaskDelay(1/portTICK_PERIOD_MS);
 }
 
 static void slv0_readn(uint8_t reg, uint8_t size)
