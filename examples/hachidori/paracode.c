@@ -155,8 +155,8 @@ void fs_task(void *pvParameters)
         float rup, hup, ydelta, d[NUM_MOTORS];
         // These are rough approximations which would be enough for
         // our purpose.
-        hup = -(q0*q1+q3*q2);
-        rup = q0*q2-q3*q1;
+        rup = -(q0*q1+q3*q2);
+        hup = q0*q2-q3*q1;
 
         // Estimate yaw change
         if (qp0 == 1.0f) {

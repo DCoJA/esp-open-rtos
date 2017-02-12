@@ -363,17 +363,18 @@ void imu_task(void *pvParameters)
         mpu9250_read_sample(&rx);
 
         // adjust and serialize floats into packet bytes
+        // skew accel/gyro frames so to match AK8963 frame
         union { float f; uint8_t bytes[sizeof(float)];} ux, uy, uz;
-        ux.f = ((float)be16_val(rx.d, 0)) * MPU9250_ACCEL_SCALE_1G;
-        uy.f = ((float)be16_val(rx.d, 1)) * MPU9250_ACCEL_SCALE_1G;
-        uz.f = ((float)be16_val(rx.d, 2)) * MPU9250_ACCEL_SCALE_1G;
+        ux.f = ((float)be16_val(rx.d, 1)) * MPU9250_ACCEL_SCALE_1G;
+        uy.f = ((float)be16_val(rx.d, 0)) * MPU9250_ACCEL_SCALE_1G;
+        uz.f = -((float)be16_val(rx.d, 2)) * MPU9250_ACCEL_SCALE_1G;
         ax = ux.f; ay = uy.f; az = uz.f;
         memcpy(&pkt.data[0], ux.bytes, sizeof(ux));
         memcpy(&pkt.data[4], uy.bytes, sizeof(uy));
         memcpy(&pkt.data[8], uz.bytes, sizeof(uz));
-        ux.f = ((float)be16_val(rx.d, 4)) * GYRO_SCALE;
-        uy.f = ((float)be16_val(rx.d, 5)) * GYRO_SCALE;
-        uz.f = ((float)be16_val(rx.d, 6)) * GYRO_SCALE;
+        ux.f = ((float)be16_val(rx.d, 5)) * GYRO_SCALE;
+        uy.f = ((float)be16_val(rx.d, 4)) * GYRO_SCALE;
+        uz.f = -((float)be16_val(rx.d, 6)) * GYRO_SCALE;
         gx = ux.f; gy = uy.f; gz = uz.f;
         memcpy(&pkt.data[12], ux.bytes, sizeof(ux));
         memcpy(&pkt.data[16], uy.bytes, sizeof(uy));
@@ -417,13 +418,13 @@ void imu_task(void *pvParameters)
 
             if (prepare_failsafe) {
                 beta = (fscount++ < 1000) ? 2.0f : 0.2f;
-                MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, my, mx, -mz);
+                MadgwickAHRSupdate(gx, gy, gz, ax, ay, az, mx, my, mz);
                 KFACCupdate(ax, ay, az);
             } else {
                 fscount = 0;
             }
 #if DISARM_ON_INVERSION
-            if (az < -GRAVITY_MSS * 0.6) {
+            if (-az < -GRAVITY_MSS * 0.6) {
                 if(++maybe_inverted > INVERSION_WM) {
                     if (in_arm) {
                         in_arm = false;
@@ -435,7 +436,7 @@ void imu_task(void *pvParameters)
 #endif
             if ((ax < 0.8 && ax > -0.8)
                 && (ay < 0.8 && ay > -0.8)
-                && (az < GRAVITY_MSS + 0.6 && az > GRAVITY_MSS - 0.6)
+                && (-az < GRAVITY_MSS + 0.6 && -az > GRAVITY_MSS - 0.6)
                 && (gx < 0.05 && gx > -0.05)
                 && (gy < 0.05 && gy > -0.05)
                 && (gz < 0.05 && gz > -0.05)) {

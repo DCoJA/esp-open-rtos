@@ -20,8 +20,9 @@ void KFACCupdate(float b, float c, float d)
     // k-component of conjugate q^-1 (0+bi+cj+dk) q i.e. estimated
     // vertical accelaration
     x = q0*(d*q0 + c*q1 - b*q2) + q1*(c*q0 - d*q1 + b*q3)
-        - q2*(b*q0 + d*q2 - c*q3) - q3*(- b*q1 - c*q2 - d*q3)
-        - GRAVITY_MSS;
+        - q2*(b*q0 + d*q2 - c*q3) - q3*(- b*q1 - c*q2 - d*q3);
+    // adjust orientation
+    x = -x - GRAVITY_MSS;
 
     xhatm = xhat;
     Pm = P + Q;
