@@ -4,6 +4,7 @@
  */
 
 #include "espressif/esp_common.h"
+#include "espressif/user_interface.h"
 #include "esp/uart.h"
 #include "esp/spi.h"
 
@@ -192,6 +193,25 @@ void user_init(void)
     printf("SDK version : %s\n", sdk_system_get_sdk_version());
     printf("GIT version : %s\n", GITSHORTREV);
 
+#if defined(USE_EXTERNAL_AP)
+    // required to call wifi_set_opmode before station_set_config
+    sdk_wifi_set_opmode(STATION_MODE);
+# ifdef USE_STATIC_IP_ADDRESS
+    sdk_wifi_station_dhcpc_stop();
+    struct ip_info info;
+    memset(&info, 0, sizeof(info));
+    info.ip.addr = ipaddr_addr(UDP_SERVER);
+    info.netmask.addr = ipaddr_addr("255.255.255.0");
+    info.gw.addr = ipaddr_addr(GW_ADDRESS);
+    sdk_wifi_set_ip_info(STATION_IF, &info);
+# endif
+
+    struct sdk_station_config config = {
+        .ssid = WIFI_SSID,
+        .password = WIFI_PASS,
+    };
+    sdk_wifi_station_set_config(&config);
+#else
     sdk_wifi_set_opmode(SOFTAP_MODE);
     struct ip_info ap_ip;
     ipaddr_aton(UDP_SERVER, &ap_ip.ip);
@@ -211,10 +231,11 @@ void user_init(void)
     };
     sdk_wifi_softap_set_config(&ap_config);
 
-#ifndef USE_STATIC_IP_ADDRESS
+# ifndef USE_STATIC_IP_ADDRESS
     ip_addr_t first_client_ip;
     ipaddr_aton(UDP_CLIENT, &first_client_ip);
     dhcpserver_start(&first_client_ip, 4);
+# endif
 #endif
 
     vSemaphoreCreateBinary(lpc_sem);
